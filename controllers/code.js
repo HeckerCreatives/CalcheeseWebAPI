@@ -1,6 +1,6 @@
 const moment = require("moment");
 const Chest = require("../models/Chest")
-const { Code, CodeHistory, RedeemCode, } = require("../models/Code")
+const { Code, CodeHistory, RedeemCode, Item, } = require("../models/Code")
 
 
 
@@ -67,6 +67,112 @@ exports.generatecode = async (req, res) => {
     return res.json({ message: "success" });
 };
 
+exports.createItem = async (req, res) => {
+    const { id } = req.user
+
+    const { name, type, quantity } = req.body
+
+    if (!name || !type || !quantity) {
+        return res.status(400).json({ message: "failed", data: "Please fill in all the required fields!" });
+    }
+
+    if (quantity <= 0) {
+        return res.status(400).json({ message: "failed", data: "Please enter a valid quantity!" });
+    }
+
+    if (type !== "robux" && type !== "ticket") {
+        return res.status(400).json({ message: "failed", data: "Please enter a valid type!" });
+    }
+
+    await Item.create({ itemname: name, itemtype: type, quantity: quantity })
+        .then(data => data)
+        .catch(err => {
+            console.log(`There's a problem creating the item. Error ${err}`);
+
+            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+        });
+
+    return res.json({ message: "success" });
+}
+
+exports.getItems = async (req, res) => {
+    const { id } = req.user
+    const { page, limit, type } = req.query
+
+    const pageOptions = {
+        page: parseInt(page) || 0,
+        limit: parseInt(limit) || 10,
+    };
+
+    const filterOptions = {};
+    if (type) {
+        if (type === "robux" || type === "ticket") {
+            filterOptions.itemtype = type;
+        } else {
+            return res.status(400).json({ message: "failed", data: "Please enter a valid type!" });
+        }
+    }
+
+    const items = await Item.find(filterOptions)
+        .sort({ createdAt: -1 })
+        .skip(pageOptions.page * pageOptions.limit)
+        .limit(pageOptions.limit)
+        .then(data => data)
+        .catch(err => {
+            console.log(`There's a problem getting the items. Error ${err}`);
+
+            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+        });
+
+    const totaldocs = await Item.countDocuments(filterOptions)
+        .then(data => data)
+        .catch(err => {
+            console.log(`There's a problem counting the items. Error ${err}`);
+
+            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+        });
+
+    
+    const totalpages = Math.ceil(totaldocs / pageOptions.limit);
+
+    const finaldata = {
+        totalpages: totalpages,
+        data: items.map(item => ({
+            id: item._id,
+            name: item.itemname,
+            type: item.itemtype,
+            quantity: item.quantity,
+            createdAt: moment(item.createdAt).format('YYYY-MM-DD'),
+        })),
+    };
+
+    return res.json({ message: "success", data: finaldata });
+
+}
+
+exports.getchests = async (req, res) => {
+
+    const { id } = req.user
+
+    const chests = await Chest.find()
+        .then(data => data)
+        .catch(err => {
+            console.log(`There's a problem getting the chests. Error ${err}`);
+
+            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+        });
+
+    const finaldata = {
+        data: chests.map(item => ({
+            id: item._id,
+            name: item.chestname,
+            type: item.chesttype,
+            createdAt: moment(item.createdAt).format('YYYY-MM-DD'),
+        })),
+    };
+
+    return res.json({ message: "success", data: finaldata.data });
+}
 
 exports.getcodehistory = async (req, res) => {
 
@@ -279,3 +385,7 @@ exports.getRedeemCodeHistory = async (req, res) => {
 };
 
 
+exports.editRedeemCode = async (req, res) => {
+
+    c
+}

@@ -5,6 +5,6 @@ const router = require("express").Router()
 // const { protectsuperadmin } = require("../middleware/middleware")
 
 router
-    .get("/login", authlogin)
+    .post("/login", authlogin)
 
 module.exports = router;

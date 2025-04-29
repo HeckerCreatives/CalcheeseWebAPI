@@ -31,13 +31,11 @@ const CodeSchema = new mongoose.Schema(
             unique: true,
             index: true // Automatically creates an index on 'amount'
         },
-        items: {
-            type: Map,
-            of: {
-                type: String,
-                index: true // Automatically creates an index on 'amount'
-            }
-        },
+        items: [{
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Item',
+            index: true // Automatically creates an index on 'amount'
+        }],
         status: {
             type: String,
             default: "active",
@@ -79,13 +77,11 @@ const CodeHistorySchema = new mongoose.Schema(
             default: "active",
             index: true // Automatically creates an index on 'amount'
         },
-        items: {
-            type: Map,
-            of: {
-                type: String,
-                index: true // Automatically creates an index on 'amount'
-            }
-        },
+        items: [{
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Item',
+            index: true // Automatically creates an index on 'amount'
+        }],
         codeid: [
             {
                 type: String,
@@ -141,8 +137,30 @@ const RedeemCodeSchema = new mongoose.Schema(
     }
 )
 
+const ItemSchema = new mongoose.Schema(
+    {
+        itemname: {
+            type: String,
+            index: true // Automatically creates an index on 'amount'
+        },
+        quantity: {  
+            type: Number,
+            index: true // Automatically creates an index on 'amount'
+        },
+        itemtype: {
+            type: String,
+            enum: ['robux', 'ticket'],
+            index: true // Automatically creates an index on 'amount'
+        }
+    },
+    {
+        timestamps: true
+    }
+)
 
 const RedeemCode = mongoose.model("RedeemCode", RedeemCodeSchema)
 const CodeHistory = mongoose.model("CodeHistory", CodeHistorySchema)
 const Code = mongoose.model("Code", CodeSchema)
-module.exports =  { Code, CodeHistory, RedeemCode };
+const Item = mongoose.model("Item", ItemSchema)
+
+module.exports =  { Code, CodeHistory, RedeemCode, Item };

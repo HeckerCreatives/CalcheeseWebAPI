@@ -19,7 +19,7 @@ const encrypt = async password => {
 }
 
 exports.authlogin = async(req, res) => {
-    const { username, password } = req.query;
+    const { username, password } = req.body;
 
     Users.findOne({ username: { $regex: new RegExp('^' + username + '$', 'i') } })
     .then(async user => {
