@@ -50,6 +50,8 @@ exports.authlogin = async(req, res) => {
                 }})
             })
             .catch(err => res.status(400).json({ message: "bad-request2", data: "There's a problem with your account! There's a problem with your account! Please contact customer support for more details."  + err }))
+        } else {
+            return res.status(401).json({ message: 'failed', data: "Invalid username or password!" });
         }
     })
     .catch(err => res.status(400).json({ message: "bad-request1", data: "There's a problem with your account! There's a problem with your account! Please contact customer support for more details." }))
@@ -58,4 +60,32 @@ exports.authlogin = async(req, res) => {
 exports.logout = async (req, res) => {
     res.clearCookie('sessionToken', { path: '/' })
     return res.json({message: "success"})
+}
+
+exports.changepassword = async (req, res) => {
+    const { id } = req.user
+    const { newpw } = req.body
+
+    if (!newpw) return res.status(400).json({ message: "bad-request", data: "Please provide a new password!" })
+
+    if (newpw.length < 6) return res.status(400).json({ message: "bad-request", data: "Password must be at least 6 characters!" })
+
+    if (newpw.length > 20) return res.status(400).json({ message: "bad-request", data: "Password must be at most 20 characters!" })
+
+    if (!/[a-z]/.test(newpw)) return res.status(400).json({ message: "bad-request", data: "Password must contain at least one lowercase letter!" })
+
+    if (!/[0-9]/.test(newpw)) return res.status(400).json({ message: "bad-request", data: "Password must contain at least one number!" })
+    
+
+    if (newpw.includes(" ")) return res.status(400).json({ message: "bad-request", data: "Password must not contain any spaces!" })
+
+    const hashedPassword = await encrypt(newpw)
+    await Users.findByIdAndUpdate({_id: id}, {$set: {password: hashedPassword}}, { new: true })
+    .then(data => data)
+    .catch(err => {
+        console.log("Error while changing password", err)
+        return res.status(400).json({ message: "bad-request", data: "There's a problem with your account! Please contact customer support for more details." })
+    })
+
+    return res.json({message: "success" })
 }
