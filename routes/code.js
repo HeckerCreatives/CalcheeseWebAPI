@@ -1,4 +1,4 @@
-const { generatecode, getcodehistory, redeemcode, getRedeemCodeHistory, createItem, getItems, getchests, editcodehistory, editItem, editredeemcodestatus } = require('../controllers/code');
+const { generatecode, getcodehistory, redeemcode, getRedeemCodeHistory, createItem, getItems, getchests, editcodehistory, editItem, editredeemcodestatus, deleteredeemcode } = require('../controllers/code');
 const { protectsuperadmin } = require('../middleware/middleware');
 
 const upload = require("../middleware/uploadpics")
@@ -27,5 +27,6 @@ router
     })}, redeemcode)
  .get("/getredeemhistory", protectsuperadmin, getRedeemCodeHistory)
  .post("/editredeemcodestatus", protectsuperadmin, editredeemcodestatus)
+ .post("/deleteredeemcode", protectsuperadmin, deleteredeemcode)
 
 module.exports = router;

@@ -569,4 +569,36 @@ exports.editredeemcodestatus = async (req, res) => {
     return res.json({ message: "success" });
 };
 
+
+exports.deleteredeemcode = async (req, res) => {
+    const { id } = req.user
+
+    const { redeemid } = req.body;
+
+    if (!redeemid) {
+        return res.status(400).json({ message: "failed", data: "Please provide a redeem code ID!" });
+    }
+
+    const redeemCode = await RedeemCode.findById(redeemid)
+        .then(data => data)
+        .catch(err => {
+            console.log(`There's a problem finding the redeem code. Error ${err}`);
+            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+        });
+
+    if (!redeemCode) {
+        return res.status(404).json({ message: "failed", data: "Redeem code not found!" });
+    }
+
+    await RedeemCode.findByIdAndDelete(redeemid)
+        .then(data => data)
+        .catch(err => {
+            console.log(`There's a problem deleting the redeem code. Error ${err}`);
+            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+        });
+
+    return res.json({ message: "success" });
+
+}
+
 // #endregion
