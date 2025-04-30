@@ -4,6 +4,8 @@ const routers = app => {
     app.use("/auth", require("./auth"))
     app.use("/code", require("./code"))
     app.use("/dashboard", require("./dashboard"))
+    app.use("/robuxcode", require("./robuxcode"))
+    app.use("/ticket", require("./ticket"))
     app.use("/uploads", require("./uploads"))
 }
 module.exports = routers

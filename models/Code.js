@@ -139,6 +139,10 @@ const RedeemCodeSchema = new mongoose.Schema(
 
 const ItemSchema = new mongoose.Schema(
     {
+        itemcode: {
+            type: String,
+            index: true // Automatically creates an index on 'amount'
+        },
         itemname: {
             type: String,
             index: true // Automatically creates an index on 'amount'
