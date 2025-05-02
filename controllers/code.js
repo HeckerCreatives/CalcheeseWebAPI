@@ -362,28 +362,64 @@ exports.getItems = async (req, res) => {
 
 }
 
+// exports.getchests = async (req, res) => {
+
+//     const { id } = req.user
+
+//     const chests = await Chest.find()
+//         .then(data => data)
+//         .catch(err => {
+//             console.log(`There's a problem getting the chests. Error ${err}`);
+
+//             return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+//         });
+
+//     const finaldata = {
+//         data: chests.map(item => ({
+//             id: item._id,
+//             name: item.chestname,
+//             type: item.chesttype,
+//             createdAt: moment(item.createdAt).format('YYYY-MM-DD'),
+//         })),
+//     };
+
+//     return res.json({ message: "success", data: finaldata.data });
+// }
+
 exports.getchests = async (req, res) => {
-
-    const { id } = req.user
-
-    const chests = await Chest.find()
-        .then(data => data)
-        .catch(err => {
-            console.log(`There's a problem getting the chests. Error ${err}`);
-
-            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
-        });
-
-    const finaldata = {
-        data: chests.map(item => ({
+    const { id } = req.user;
+  
+    try {
+      // Fetch all chests
+      const chests = await Chest.find();
+  
+      // For each chest, count associated codes
+      const finaldata = await Promise.all(
+        chests.map(async (item) => {
+          const totalCodes = await Code.countDocuments({ chest: item._id });
+          const totalUsed = await Code.countDocuments({ chest: item._id, isUsed: true });
+          const totalUnused = await Code.countDocuments({ chest: item._id, isUsed: false });
+  
+          return {
             id: item._id,
             name: item.chestname,
             type: item.chesttype,
-            createdAt: moment(item.createdAt).format('YYYY-MM-DD'),
-        })),
-    };
-
-    return res.json({ message: "success", data: finaldata.data });
+            totalused: totalUsed,
+            totalunused: totalUnused,
+            createdAt: moment(item.createdAt).format("YYYY-MM-DD"),
+            totalCodes,
+          };
+        })
+      );
+  
+      return res.json({ message: "success", data: finaldata });
+    } catch (err) {
+      console.error(`There's a problem getting the chests. Error: ${err}`);
+      return res.status(400).json({
+        message: "bad-request",
+        data: "There's a problem with the server! Please contact customer support for more details.",
+      });
+    }
 }
 
 // #endregion

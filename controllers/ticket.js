@@ -126,8 +126,59 @@ exports.createTicket = async (req, res) => {
     return res.json({ message: "success" });
 };
 
+// exports.getTickets = async (req, res) => {
+//     const { page, limit, status } = req.query;
+
+//     const pageOptions = {
+//         page: parseInt(page) || 0,
+//         limit: parseInt(limit) || 10,
+//     };
+
+//     const filter = {};
+//     if (status) filter.status = status;
+
+//     const totalDocs = await Ticket.countDocuments(filter)
+//         .then(data => data)
+//         .catch(err => {
+//             console.log(`There's a problem getting the tickets. Error ${err}`);
+//             return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+//         });
+
+//     const totalPages = Math.ceil(totalDocs / pageOptions.limit);
+//     const tickets = await Ticket.find(filter)
+//         .populate("tickettype")
+//         .skip(pageOptions.page * pageOptions.limit)
+//         .limit(pageOptions.limit)
+//         .then(data => data)
+//         .catch(err => {
+//             console.log(`There's a problem getting the tickets. Error ${err}`);
+//             return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+//         });
+
+//     const finalData = tickets.map(ticket => ({
+//         id: ticket._id,
+//         tickettypeid:  ticket.tickettype?._id,
+//         ticketcode: ticket.ticketcode,
+//         tickettype: ticket.tickettype?.tickettype,
+//         ticketname: ticket.tickettype?.ticketname,
+//         name: ticket.name,
+//         email: ticket.email,
+//         picture: ticket.picture,
+//         status: ticket.status,
+//         code: ticket.code || "", 
+//         createdAt: moment(ticket.createdAt).format("YYYY-MM-DD"),
+//     }));
+
+//     return res.json({
+//         message: "success",
+//         data: finalData,
+//         totalPages,
+//     });
+// };
+
+
 exports.getTickets = async (req, res) => {
-    const { page, limit, status } = req.query;
+    const { page, limit, status, search } = req.query;
 
     const pageOptions = {
         page: parseInt(page) || 0,
@@ -135,44 +186,51 @@ exports.getTickets = async (req, res) => {
     };
 
     const filter = {};
-    if (status) filter.status = status;
 
-    const totalDocs = await Ticket.countDocuments(filter)
-        .then(data => data)
-        .catch(err => {
-            console.log(`There's a problem getting the tickets. Error ${err}`);
-            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+    if (status && ['pending', 'claimed'].includes(status.toLowerCase())) {
+        filter.status = status.toLowerCase();
+    }
+
+    if (search) {
+        filter.ticketcode = { $regex: search, $options: 'i' };
+    }
+
+    try {
+        const totalDocs = await Ticket.countDocuments(filter);
+        const totalPages = Math.ceil(totalDocs / pageOptions.limit);
+
+        const tickets = await Ticket.find(filter)
+            .populate("tickettype")
+            .skip(pageOptions.page * pageOptions.limit)
+            .limit(pageOptions.limit);
+
+        const finalData = tickets.map(ticket => ({
+            id: ticket._id,
+            tickettypeid:  ticket.tickettype?._id,
+            ticketcode: ticket.ticketcode,
+            tickettype: ticket.tickettype?.tickettype,
+            ticketname: ticket.tickettype?.ticketname,
+            name: ticket.name,
+            email: ticket.email,
+            picture: ticket.picture,
+            status: ticket.status,
+            isUsed: ticket.isUsed,
+            code: ticket.code || "", 
+            createdAt: moment(ticket.createdAt).format("YYYY-MM-DD"),
+        }));
+
+        return res.json({
+            message: "success",
+            data: finalData,
+            totalPages,
         });
-
-    const totalPages = Math.ceil(totalDocs / pageOptions.limit);
-    const tickets = await Ticket.find(filter)
-        .populate("tickettype")
-        .skip(pageOptions.page * pageOptions.limit)
-        .limit(pageOptions.limit)
-        .then(data => data)
-        .catch(err => {
-            console.log(`There's a problem getting the tickets. Error ${err}`);
-            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+    } catch (err) {
+        console.error(`Error fetching tickets: ${err}`);
+        return res.status(400).json({
+            message: "bad-request",
+            data: "There's a problem with the server! Please contact customer support for more details."
         });
-
-    const finalData = tickets.map(ticket => ({
-        id: ticket._id,
-        ticketcode: ticket.ticketcode,
-        tickettype: ticket.tickettype.tickettype,
-        ticketname: ticket.tickettype.ticketname,
-        name: ticket.name,
-        email: ticket.email,
-        picture: ticket.picture,
-        status: ticket.status,
-        code: ticket.code || "", 
-        createdAt: moment(ticket.createdAt).format("YYYY-MM-DD"),
-    }));
-
-    return res.json({
-        message: "success",
-        data: finalData,
-        totalPages,
-    });
+    }
 };
 
 exports.editTicket = async (req, res) => {

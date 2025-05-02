@@ -31,41 +31,88 @@ exports.createrobuxcode = async (req, res) => {
     return res.json({ message: "success" })
 }
 
+// exports.getrobuxcodes = async (req, res) => {
+//     const { id } = req.user
+//     const { page , limit, status } = req.query
+
+//     const pageOptions = {
+//         page: parseInt(page) || 0,
+//         limit: parseInt(limit) || 10,
+//     }
+
+//     const filter = {}
+//     if (status) filter.status = status
+
+//     const totalDocs = await RobuxCode.countDocuments(filter)
+//         .then(data => data)
+//         .catch(err => {
+//             console.log(`There's a problem getting the robux codes. Error ${err}`)
+//             return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." })
+//         })
+
+    
+//     const totalPages = Math.ceil(totalDocs / pageOptions.limit)
+//     const robuxcodes = await RobuxCode.find(filter)
+//         .skip(pageOptions.page * pageOptions.limit)
+//         .limit(pageOptions.limit)
+//         .then(data => data)
+//         .catch(err => {
+//             console.log(`There's a problem getting the robux codes. Error ${err}`)
+//             return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." })
+//         })
+
+
+//     const finalData = []
+
+//     robuxcodes.forEach(robuxcode => {
+//         finalData.push({
+//             id: robuxcode._id,
+//             robuxcode: robuxcode.robuxcode,
+//             name: robuxcode.name,
+//             email: robuxcode.email,
+//             picture: robuxcode.picture,
+//             code: robuxcode.code || "",
+//             amount: robuxcode.amount,
+//             status: robuxcode.status,
+//             createdAt: moment(robuxcode.createdAt).format('YYYY-MM-DD'),
+//         })
+//     })
+
+//     return res.json({ 
+//         message: "success", 
+//         data: finalData,
+//         totalPages: totalPages,
+//     })
+// }
+
 exports.getrobuxcodes = async (req, res) => {
-    const { id } = req.user
-    const { page , limit, status } = req.query
+    const { id } = req.user;
+    const { page, limit, status, search } = req.query;
 
     const pageOptions = {
         page: parseInt(page) || 0,
         limit: parseInt(limit) || 10,
+    };
+
+    const filter = {};
+
+    if (status && ['pending', 'claimed'].includes(status.toLowerCase())) {
+        filter.status = status.toLowerCase();
     }
 
-    const filter = {}
-    if (status) filter.status = status
+    if (search) {
+        filter.robuxcode = { $regex: search, $options: 'i' };
+    }
 
-    const totalDocs = await RobuxCode.countDocuments(filter)
-        .then(data => data)
-        .catch(err => {
-            console.log(`There's a problem getting the robux codes. Error ${err}`)
-            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." })
-        })
+    try {
+        const totalDocs = await RobuxCode.countDocuments(filter);
+        const totalPages = Math.ceil(totalDocs / pageOptions.limit);
 
-    
-    const totalPages = Math.ceil(totalDocs / pageOptions.limit)
-    const robuxcodes = await RobuxCode.find(filter)
-        .skip(pageOptions.page * pageOptions.limit)
-        .limit(pageOptions.limit)
-        .then(data => data)
-        .catch(err => {
-            console.log(`There's a problem getting the robux codes. Error ${err}`)
-            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." })
-        })
+        const robuxcodes = await RobuxCode.find(filter)
+            .skip(pageOptions.page * pageOptions.limit)
+            .limit(pageOptions.limit);
 
-
-    const finalData = []
-
-    robuxcodes.forEach(robuxcode => {
-        finalData.push({
+        const finalData = robuxcodes.map(robuxcode => ({
             id: robuxcode._id,
             robuxcode: robuxcode.robuxcode,
             name: robuxcode.name,
@@ -74,16 +121,25 @@ exports.getrobuxcodes = async (req, res) => {
             code: robuxcode.code || "",
             amount: robuxcode.amount,
             status: robuxcode.status,
+            isUsed: robuxcode.isUsed,
             createdAt: moment(robuxcode.createdAt).format('YYYY-MM-DD'),
-        })
-    })
+        }));
 
-    return res.json({ 
-        message: "success", 
-        data: finalData,
-        totalPages: totalPages,
-    })
-}
+        return res.json({ 
+            message: "success", 
+            data: finalData,
+            totalPages,
+        });
+
+    } catch (err) {
+        console.error(`Error fetching robux codes: ${err}`);
+        return res.status(400).json({
+            message: "bad-request",
+            data: "There's a problem with the server! Please contact customer support for more details."
+        });
+    }
+};
+
 
 
 exports.editrobuxcode = async (req, res) => {
@@ -92,6 +148,8 @@ exports.editrobuxcode = async (req, res) => {
     const { robuxcodeid, robuxcode, amount, status, name, email } = req.body
     
     const { picture } = req.file ? req.file : ""
+
+    console.log(req.body)
 
     if (!robuxcodeid) return res.status(400).json({ message: "bad-request", data: "Please provide a robux code id!" })
 
