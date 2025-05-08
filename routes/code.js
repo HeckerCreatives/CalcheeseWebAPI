@@ -1,4 +1,4 @@
-const { generatecode, getcodehistory, redeemcode, getRedeemCodeHistory, createItem, getItems, getchests, editcodehistory, editItem, editredeemcodestatus, deleteredeemcode } = require('../controllers/code');
+const { generatecode, redeemcode, getchests } = require('../controllers/code');
 const { protectsuperadmin } = require('../middleware/middleware');
 
 const upload = require("../middleware/uploadpics")
@@ -8,14 +8,9 @@ const router = require('express').Router();
 
 router
  .post("/generatecode", protectsuperadmin, generatecode)
- .get("/getcodehistory", protectsuperadmin, getcodehistory)
- .post("/editcodehistory", protectsuperadmin, editcodehistory)
 
-
- .post("/createitem", protectsuperadmin, createItem)
  .get("/getchests", protectsuperadmin, getchests)
- .get("/getitems", protectsuperadmin, getItems)
- .post("/edititem", protectsuperadmin, editItem)
+
 
  .post("/redeemcode", function (req, res, next) {
     uploadimg(req, res, function(err){
@@ -25,8 +20,5 @@ router
 
         next()
     })}, redeemcode)
- .get("/getredeemhistory", protectsuperadmin, getRedeemCodeHistory)
- .post("/editredeemcodestatus", protectsuperadmin, editredeemcodestatus)
- .post("/deleteredeemcode", protectsuperadmin, deleteredeemcode)
 
 module.exports = router;

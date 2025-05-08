@@ -20,7 +20,7 @@ exports.createrobuxcode = async (req, res) => {
 
     if (robuxcodeExists) return res.status(400).json({ message: "bad-request", data: "Robux code already exists!" })
 
-    await RobuxCode.create({ robuxcode, amount, status: "pending", name: "", email: "", picture: "" })
+    await RobuxCode.create({ robuxcode, amount, status: "to-generate", name: "", email: "", picture: "" })
     .then (data => data)
     .catch (err => {
         console.log(`There's a problem creating the robux code. Error ${err}`)

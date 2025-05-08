@@ -116,7 +116,7 @@ exports.createTicket = async (req, res) => {
 
     if (ticketExists) return res.status(400).json({ message: "bad-request", data: "Ticket already exists!" });
 
-    await Ticket.create({ ticketcode, tickettype, name: "", email: "", status: "pending", picture: "" })
+    await Ticket.create({ ticketcode, tickettype, name: "", email: "", status: "to-generate", picture: "" })
         .then(data => data)
         .catch(err => {
             console.log(`There's a problem creating the ticket. Error ${err}`);

@@ -5,6 +5,7 @@ const routers = app => {
     app.use("/code", require("./code"))
     app.use("/dashboard", require("./dashboard"))
     app.use("/robuxcode", require("./robuxcode"))
+    app.use("/section", require("./section"))
     app.use("/ticket", require("./ticket"))
     app.use("/uploads", require("./uploads"))
 }

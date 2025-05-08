@@ -26,7 +26,7 @@ const TicketSchema = new mongoose.Schema(
         },
         status: {
             type: String,
-            default: "pending",
+            default: "to-generate",
             index: true // Automatically creates an index on 'amount'
         },
         code: {
