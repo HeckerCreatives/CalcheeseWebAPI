@@ -4,7 +4,7 @@ const { ImageSection, WhatsNewSection, PromoCodeSection } = require("../models/S
 exports.createimagesection = async (req, res) => {
     const { section } = req.body;
     const { image } = req.file ? req.file : "";
-    
+
     if (!section || !image) {
         return res.status(400).json({ message: "bad-request", data: "Please provide all the required fields!" });
     }
@@ -121,12 +121,39 @@ exports.createwhatsnewsection = async (req, res) => {
 };
 
 exports.getwhatsnewsections = async (req, res) => {
-    await WhatsNewSection.find()
-        .then(data => res.json({ message: "success", data }))
+    const { page, limit } = req.query;
+    
+    const pageOptions = {
+        page: parseInt(page) || 0,
+        limit: parseInt(limit) || 10,
+    };
+
+    const data = await WhatsNewSection.find()
+        .skip(pageOptions.page * pageOptions.limit)
+        .limit(pageOptions.limit)
+        .then(data => data)
         .catch(err => {
             console.log(`There's a problem fetching what's new sections. Error ${err}`);
             return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
         });
+
+    const totaldocuments = await WhatsNewSection.countDocuments()
+        .then(data => data)
+        .catch(err => {
+            console.log(`There's a problem counting what's new sections. Error ${err}`);
+            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+        });
+    
+    const totalpages = Math.ceil(totaldocuments / pageOptions.limit);
+
+    const finalData = data.map(item => ({
+        id: item._id,
+        tab: item.tab,
+        description: item.description,
+        image: item.image,
+    }));
+
+    return res.json({ message: "success", data: finalData, totalpages });
 };
 
 exports.updatewhatsnewsection = async (req, res) => {
