@@ -213,8 +213,28 @@ exports.createpromocodesection = async (req, res) => {
 };
 
 exports.getpromocodesections = async (req, res) => {
+    const { page, limit } = req.query;
+
+    const pageOptions = {
+        page: parseInt(page) || 0,
+        limit: parseInt(limit) || 10,
+    };
+
     await PromoCodeSection.find()
-        .then(data => res.json({ message: "success", data }))
+        .skip(pageOptions.page * pageOptions.limit)
+        .limit(pageOptions.limit)
+        .then(data => {
+            const totaldocuments = data.length;
+            const totalpages = Math.ceil(totaldocuments / pageOptions.limit);
+
+            const finalData = data.map(item => ({
+                id: item._id,
+                title: item.title,
+                description: item.description,
+            }));
+
+            return res.json({ message: "success", data: finalData, totalpages });
+        })
         .catch(err => {
             console.log(`There's a problem fetching promo code sections. Error ${err}`);
             return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
@@ -228,7 +248,15 @@ exports.updatepromocodesection = async (req, res) => {
         return res.status(400).json({ message: "bad-request", data: "Please provide the ID!" });
     }
 
-    await PromoCodeSection.findByIdAndUpdate(id, { title, description }, { new: true })
+    const updateData = { };
+
+    if (title) updateData.title = title;
+    if (description) updateData.description = description;
+    if (updateData.length === 0) {
+        return res.status(400).json({ message: "bad-request", data: "Please provide at least one field to update!" });
+    }
+
+    await PromoCodeSection.findByIdAndUpdate(id, updateData, { new: true })
         .then(data => res.json({ message: "success", data }))
         .catch(err => {
             console.log(`There's a problem updating the promo code section. Error ${err}`);
@@ -250,3 +278,4 @@ exports.deletepromocodesection = async (req, res) => {
             return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
         });
 };
+
