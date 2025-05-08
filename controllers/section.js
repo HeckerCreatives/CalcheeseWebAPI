@@ -2,8 +2,9 @@ const { ImageSection, WhatsNewSection, PromoCodeSection } = require("../models/S
 
 // Create Image Section
 exports.createimagesection = async (req, res) => {
-    const { section, image } = req.body;
-
+    const { section } = req.body;
+    const { image } = req.file ? req.file : "";
+    
     if (!section || !image) {
         return res.status(400).json({ message: "bad-request", data: "Please provide all the required fields!" });
     }
@@ -144,7 +145,7 @@ exports.updatewhatsnewsection = async (req, res) => {
     if (updateData.length === 0) {
         return res.status(400).json({ message: "bad-request", data: "Please provide at least one field to update!" });
     }
-    
+
     await WhatsNewSection.findByIdAndUpdate(id, updateData, { new: true })
         .then(data => res.json({ message: "success", data }))
         .catch(err => {
