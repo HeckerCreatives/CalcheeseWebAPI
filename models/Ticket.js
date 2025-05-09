@@ -33,7 +33,12 @@ const TicketSchema = new mongoose.Schema(
             type: mongoose.Schema.Types.ObjectId,
             ref: 'Code',
             index: true // Automatically creates an index on 'amount'
-        }
+        },
+        isUsed: {
+            type: Boolean,
+            default: true,
+            index: true 
+        },
 
     },
     {

@@ -34,6 +34,11 @@ const RobuxCodeSchema = new mongoose.Schema(
             default: "to-generate",
             index: true // Automatically creates an index on 'amount'
         },
+        isUsed: {
+            type: Boolean,
+            default: true,
+            index: true 
+        },
 
     },
     {

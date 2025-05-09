@@ -10,7 +10,8 @@ const {
     createpromocodesection,
     getpromocodesections,
     updatepromocodesection,
-    deletepromocodesection
+    deletepromocodesection,
+    getimagewelcomesections
 } = require('../controllers/section');
 const { protectsuperadmin } = require('../middleware/middleware');
 
@@ -31,6 +32,9 @@ router
     });
 }, createimagesection)
 .get("/getimagesections", protectsuperadmin, getimagesections)
+.get("/getimagesectionsminigamelp", getimagesections)
+.get("/getimagewelcomesections", protectsuperadmin, getimagewelcomesections)
+.get("/getimagewelcomesectionslp", getimagewelcomesections)
 .post("/updateimagesection", protectsuperadmin, function (req, res, next) {
     uploadimg(req, res, function (err) {
         if (err) {
@@ -49,7 +53,7 @@ router
         next();
     });
 }, createwhatsnewsection)
-.get("/getwhatsnewsections", protectsuperadmin, getwhatsnewsections)
+.get("/getwhatsnewsections", getwhatsnewsections)
 .post("/updatewhatsnewsection", protectsuperadmin, function (req, res, next) {
     uploadimg(req, res, function (err) {
         if (err) {
@@ -62,7 +66,7 @@ router
 
 // PromoCode Section Routes
 .post("/createpromocodesection", protectsuperadmin, createpromocodesection)
-.get("/getpromocodesections", protectsuperadmin, getpromocodesections)
+.get("/getpromocodesections", getpromocodesections)
 .post("/updatepromocodesection", protectsuperadmin, updatepromocodesection)
 .post("/deletepromocodesection", protectsuperadmin, deletepromocodesection)
 

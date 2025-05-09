@@ -3,7 +3,7 @@ const { ImageSection, WhatsNewSection, PromoCodeSection } = require("../models/S
 // Create Image Section
 exports.createimagesection = async (req, res) => {
     const { section } = req.body;
-    const { image } = req.file ? req.file : "";
+    const image = req.file ? req.file.filename : null;
 
     if (!section || !image) {
         return res.status(400).json({ message: "bad-request", data: "Please provide all the required fields!" });
@@ -17,7 +17,7 @@ exports.createimagesection = async (req, res) => {
         .then(data => res.json({ message: "success", data }))
         .catch(err => {
             console.log(`There's a problem creating the image section. Error ${err}`);
-            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+            return res.status(500).json({ message: "server-error", data: "There's a problem with the server! Please contact customer support for more details." });
         });
 };
 
@@ -60,32 +60,90 @@ exports.getimagesections = async (req, res) => {
     
 };
 
+exports.getimagewelcomesections = async (req, res) => {
+    const { filter } = req.query;
+  
+    try {
+      // Build aggregation pipeline
+      const pipeline = [];
+  
+      if (filter) {
+        pipeline.push({ $match: { section: filter } });
+      }
+  
+      pipeline.push({ $sample: { size: 3 } });
+  
+      const data = await ImageSection.aggregate(pipeline);
+  
+      const finalData = data.map(item => ({
+        id: item._id,
+        section: item.section,
+        image: item.image,
+      }));
+  
+      return res.json({ message: "success", data: finalData, totalpages: 1 });
+    } catch (err) {
+      console.error("Error fetching random images:", err);
+      return res.status(500).json({
+        message: "server-error",
+        data: "There's a problem with the server! Please contact support.",
+      });
+    }
+  };
+  
+
 // Update Image Section
 exports.updateimagesection = async (req, res) => {
     const { id, section } = req.body;
-    const { image } = req.file ? req.file : "";
-
+    const image = req.file ? req.file.filename : null;
+  
     if (!id) {
-        return res.status(400).json({ message: "bad-request", data: "Please provide the ID!" });
+      return res.status(400).json({
+        message: "bad-request",
+        data: "Please provide the ID!",
+      });
     }
-
-    const updateData = { };
+  
+    if (section && section !== "welcome" && section !== "minigame") {
+      return res.status(400).json({
+        message: "bad-request",
+        data: "Section must be either 'welcome' or 'minigame'!",
+      });
+    }
+  
+    const updateData = {};
     if (section) updateData.section = section;
     if (image) updateData.image = image;
-    if (section && section !== "welcome" && section !== "minigame") {
-        return res.status(400).json({ message: "bad-request", data: "Section must be either 'welcome' or 'minigame'!" });
+  
+    if (Object.keys(updateData).length === 0) {
+      return res.status(400).json({
+        message: "bad-request",
+        data: "Please provide at least one field to update!",
+      });
     }
-    if (updateData.length === 0) {
-        return res.status(400).json({ message: "bad-request", data: "Please provide at least one field to update!" });
-    }
-
-    await ImageSection.findByIdAndUpdate(id, { section, image }, { new: true })
-        .then(data => res.json({ message: "success", data }))
-        .catch(err => {
-            console.log(`There's a problem updating the image section. Error ${err}`);
-            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+  
+    try {
+      const updated = await ImageSection.findByIdAndUpdate(id, updateData, {
+        new: true,
+      });
+  
+      if (!updated) {
+        return res.status(404).json({
+          message: "not-found",
+          data: "Image section not found.",
         });
-};
+      }
+  
+      return res.json({ message: "success", data: updated });
+    } catch (err) {
+      console.error("Update error:", err);
+      return res.status(500).json({
+        message: "server-error",
+        data: "There's a problem with the server! Please contact support.",
+      });
+    }
+  };
+  
 
 // Delete Image Section
 exports.deleteimagesection = async (req, res) => {
@@ -106,19 +164,27 @@ exports.deleteimagesection = async (req, res) => {
 // CRUD for WhatsNewSection
 exports.createwhatsnewsection = async (req, res) => {
     const { tab, description } = req.body;
-    const { image } = req.file ? req.file : "";
-
+    const image = req.file ? req.file.filename : null;
+  
     if (!tab || !description || !image) {
-        return res.status(400).json({ message: "bad-request", data: "Please provide all the required fields!" });
+      return res.status(400).json({
+        message: "bad-request",
+        data: "Please provide all the required fields!",
+      });
     }
-
-    await WhatsNewSection.create({ tab, description, image })
-        .then(data => res.json({ message: "success", data }))
-        .catch(err => {
-            console.log(`There's a problem creating the what's new section. Error ${err}`);
-            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
-        });
-};
+  
+    try {
+      const data = await WhatsNewSection.create({ tab, description, image });
+      return res.json({ message: "success", data });
+    } catch (err) {
+      console.error(`Error creating the What's New section: ${err}`);
+      return res.status(500).json({
+        message: "server-error",
+        data: "There's a problem with the server! Please contact customer support for more details.",
+      });
+    }
+  };
+  
 
 exports.getwhatsnewsections = async (req, res) => {
     const { page, limit } = req.query;
@@ -157,29 +223,50 @@ exports.getwhatsnewsections = async (req, res) => {
 };
 
 exports.updatewhatsnewsection = async (req, res) => {
-    const { id, tab, description} = req.body;
-
-    const { image } = req.file ? req.file : "";
-
-    const updateData = { };
+    const { id, tab, description } = req.body;
+    const image = req.file ? req.file.filename : null;
+  
     if (!id) {
-        return res.status(400).json({ message: "bad-request", data: "Please provide the ID!" });
+      return res.status(400).json({
+        message: "bad-request",
+        data: "Please provide the ID!",
+      });
     }
-
+  
+    const updateData = {};
     if (tab) updateData.tab = tab;
     if (description) updateData.description = description;
     if (image) updateData.image = image;
-    if (updateData.length === 0) {
-        return res.status(400).json({ message: "bad-request", data: "Please provide at least one field to update!" });
+  
+    if (Object.keys(updateData).length === 0) {
+      return res.status(400).json({
+        message: "bad-request",
+        data: "Please provide at least one field to update!",
+      });
     }
-
-    await WhatsNewSection.findByIdAndUpdate(id, updateData, { new: true })
-        .then(data => res.json({ message: "success", data }))
-        .catch(err => {
-            console.log(`There's a problem updating the what's new section. Error ${err}`);
-            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+  
+    try {
+      const updated = await WhatsNewSection.findByIdAndUpdate(id, updateData, {
+        new: true,
+      });
+  
+      if (!updated) {
+        return res.status(404).json({
+          message: "not-found",
+          data: "What's New section not found.",
         });
-};
+      }
+  
+      return res.json({ message: "success", data: updated });
+    } catch (err) {
+      console.error(`Error updating What's New section: ${err}`);
+      return res.status(500).json({
+        message: "server-error",
+        data: "There's a problem with the server! Please contact customer support for more details.",
+      });
+    }
+  };
+  
 
 exports.deletewhatsnewsection = async (req, res) => {
     const { id } = req.body;
