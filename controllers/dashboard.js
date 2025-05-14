@@ -133,44 +133,44 @@ exports.redeemCodeAnalytics = async (req, res) => {
         return res.status(400).json({ message: "failed", data: "Invalid filter. Use 'daily', 'weekly', 'monthly', or 'yearly'." });
     }
 
-    const data = await RedeemCode.aggregate([
-        { $match: matchCondition },
-        { $project: projectCondition },
-        { $group: groupCondition },
-        { $sort: sortCondition }
-    ]);
+    // const data = await RedeemCode.aggregate([
+    //     { $match: matchCondition },
+    //     { $project: projectCondition },
+    //     { $group: groupCondition },
+    //     { $sort: sortCondition }
+    // ]);
 
-    let finalData = {};
+    // let finalData = {};
 
-    // Filtering data
-    if (filter === 'daily') {
-        daily.forEach((time, index) => {
-            const matchingEntry = data.find(entry => entry._id.hour === index + 1);
-            finalData[time] = matchingEntry ? matchingEntry.value : 0;
-        });
-    } else if (filter === 'weekly') {
-        weekly.forEach((weekday, index) => {
-            const matchingEntry = data.find(entry => entry._id.day === index + 1);
-            finalData[weekday] = matchingEntry ? matchingEntry.value : 0;
-        });
-    } else if (filter === 'monthly') {
-        monthly.forEach((month, index) => {
-            const matchingEntry = data.find(entry => entry._id.month === index + 1);
-            finalData[month] = matchingEntry ? matchingEntry.value : 0;
-        });
-    } else if (filter === 'yearly') {
-        const releasedYear = 2024;
-        const currentYear = new Date("2030-11-08").getFullYear();
+    // // Filtering data
+    // if (filter === 'daily') {
+    //     daily.forEach((time, index) => {
+    //         const matchingEntry = data.find(entry => entry._id.hour === index + 1);
+    //         finalData[time] = matchingEntry ? matchingEntry.value : 0;
+    //     });
+    // } else if (filter === 'weekly') {
+    //     weekly.forEach((weekday, index) => {
+    //         const matchingEntry = data.find(entry => entry._id.day === index + 1);
+    //         finalData[weekday] = matchingEntry ? matchingEntry.value : 0;
+    //     });
+    // } else if (filter === 'monthly') {
+    //     monthly.forEach((month, index) => {
+    //         const matchingEntry = data.find(entry => entry._id.month === index + 1);
+    //         finalData[month] = matchingEntry ? matchingEntry.value : 0;
+    //     });
+    // } else if (filter === 'yearly') {
+    //     const releasedYear = 2024;
+    //     const currentYear = new Date("2030-11-08").getFullYear();
 
-        for (let year = releasedYear; year <= currentYear; year++) {
-            const matchingEntry = data.find(entry => entry._id.year === parseInt(year, 10));
-            finalData[year] = matchingEntry ? matchingEntry.value : 0;
-        }
-    } else {
-        return res.status(400).json({ message: "failed", data: "Invalid filter. Use 'daily', 'weekly', 'monthly', or 'yearly'." });
-    }
+    //     for (let year = releasedYear; year <= currentYear; year++) {
+    //         const matchingEntry = data.find(entry => entry._id.year === parseInt(year, 10));
+    //         finalData[year] = matchingEntry ? matchingEntry.value : 0;
+    //     }
+    // } else {
+    //     return res.status(400).json({ message: "failed", data: "Invalid filter. Use 'daily', 'weekly', 'monthly', or 'yearly'." });
+    // }
 
-    return res.json({ message: "success", data: finalData });
+    // return res.json({ message: "success", data: finalData });
 };
 
 exports.redeemCodeStatusAnalytics = async (req, res) => {

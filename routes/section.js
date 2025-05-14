@@ -31,7 +31,7 @@ router
         next();
     });
 }, createimagesection)
-.get("/getimagesections", protectsuperadmin, getimagesections)
+.get("/getimagesections", getimagesections)
 .get("/getimagesectionsminigamelp", getimagesections)
 .get("/getimagewelcomesections", protectsuperadmin, getimagewelcomesections)
 .get("/getimagewelcomesectionslp", getimagewelcomesections)
