@@ -324,7 +324,7 @@ exports.checkcode = async (req, res) => {
 exports.redeemcode = async (req, res) => {
 
     const { code, guardian, name, email, contact, address } = req.body;
-    const picture = req.file ? req.file.path : undefined;
+    const picture = req.file ? req.file.filename : undefined;
 
 
     if (!code) return res.status(400).json({ message: "bad-request", data: "Please provide a code!" });
