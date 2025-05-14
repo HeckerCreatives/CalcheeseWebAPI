@@ -1,4 +1,4 @@
-const { generatecode, redeemcode, getchests } = require('../controllers/code');
+const { newgeneratecode, getcodes, checkcode, redeemcode } = require('../controllers/code');
 const { protectsuperadmin } = require('../middleware/middleware');
 
 const upload = require("../middleware/uploadpics")
@@ -7,11 +7,9 @@ const uploadimg = upload.single("picture")
 const router = require('express').Router();
 
 router
- .post("/generatecode", protectsuperadmin, generatecode)
-
- .get("/getchests", protectsuperadmin, getchests)
-
-
+ .post("/generatecode", protectsuperadmin, newgeneratecode)
+ .get("/getcodes", protectsuperadmin, getcodes)
+ .post("/checkcode", checkcode)
  .post("/redeemcode", function (req, res, next) {
     uploadimg(req, res, function(err){
         if(err) {
@@ -20,5 +18,4 @@ router
 
         next()
     })}, redeemcode)
-
 module.exports = router;

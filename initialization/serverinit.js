@@ -2,7 +2,6 @@ const { default: mongoose } = require("mongoose")
 const Users = require("../models/Users")
 const Userdetails = require("../models/Userdetails")
 const Chest = require("../models/Chest")
-const { TicketType, Ticket } = require("../models/Ticket");
 const SocialLink = require("../models/Sociallinks");
 
 exports.initialize = async () => {
@@ -69,30 +68,6 @@ exports.initialize = async () => {
         });
 
         console.log("Default chest types created")
-    }
-
-    //INITIALIZE TICKET TYPES
-    const ticketTypes = await TicketType.find({})
-
-    if(ticketTypes.length <= 0){
-
-        const tickets = [
-            {category: "international", ticketname: "Voucher", tickettype: "voucher"},
-            {category: "international", ticketname: "Disneyland", tickettype: "disneyland"},
-            {category: "local", ticketname: "Enchanted Kingdom", tickettype: "engchanted_kingdom"},
-            {category: "local", ticketname: "Ocean Park", tickettype: "ocean_park"},
-        ]
-
-        await TicketType.create(tickets)
-        .then(data => data)
-        .catch(err => {
-            console.log(`There's a problem creating the default tickets. Error ${err}`)
-
-            return res.status(400).json({message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details."})
-        });
-
-        console.log("Ticket types created")
-
     }
 
     // INITIALIZE SOCIAL LINKS

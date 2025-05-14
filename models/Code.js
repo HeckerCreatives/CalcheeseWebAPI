@@ -11,10 +11,29 @@ const CodeSchema = new mongoose.Schema(
             type: Date,
             index: true // Automatically creates an index on 'amount'
         },
+        items: {      
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Item',
+            index: true // Automatically creates an index on 'amount'
+        },
+        robuxcode: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'RobuxCode',
+            index: true // Automatically creates an index
+        },
+        ticket: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Ticket',
+            index: true // Automatically creates an index
+        },
         type: {
             type: String,
-            enum: ['robux', 'ticket'],
+            enum: ['robux', 'ticket', 'ingame'],
             index: true // Automatically creates an index on 'amount'
+        },
+        status: {
+            type: String,
+            default: "to-claim",
         },
         isUsed: {
             type: Boolean,
@@ -24,54 +43,12 @@ const CodeSchema = new mongoose.Schema(
         code: {
             type: String,
             unique: true,
-             // Automatically creates an index on 'amount'
         },
-        items: [{      
-            type: mongoose.Schema.Types.ObjectId,
-            ref: 'Item',
-            index: true // Automatically creates an index on 'amount'
-        }],
-        robuxcode: [{
-            type: mongoose.Schema.Types.ObjectId,
-            ref: 'RobuxCode',
-            index: true // Automatically creates an index
-        }],
-        ticket: [{
-            type: mongoose.Schema.Types.ObjectId,
-            ref: 'Ticket',
-            index: true // Automatically creates an index
-        }]
-        
-    },
-    {
-        timestamps: true
-    }
-)
-
-
-const ItemSchema = new mongoose.Schema(
-    {
-        itemcode: {
+        guardian: {
             type: String,
-            index: true // Automatically creates an index on 'amount'
-        },
-        itemname: {
-            type: String,
-            index: true // Automatically creates an index on 'amount'
-        },
-        itemtype: {
-            type: String,
-            index: true // Automatically creates an index on 'amount'
-        },
-        amount: {
-            type: Number,
             index: true // Automatically creates an index on 'amount'
         },
         name: {
-            type: String,
-            index: true // Automatically creates an index on 'amount'
-        },
-        picture: {
             type: String,
             index: true // Automatically creates an index on 'amount'
         },
@@ -79,14 +56,16 @@ const ItemSchema = new mongoose.Schema(
             type: String,
             index: true // Automatically creates an index on 'amount'
         },
-        code: {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: 'Code',
+        address: {
+            type: String,
             index: true // Automatically creates an index on 'amount'
         },
-        status: {
+        contact: {
             type: String,
-            default: "to-generate",
+            index: true // Automatically creates an index on 'amount'
+        },
+        picture: {
+            type: String,
             index: true // Automatically creates an index on 'amount'
         },
     },
@@ -97,6 +76,5 @@ const ItemSchema = new mongoose.Schema(
 
 
 const Code = mongoose.model("Code", CodeSchema)
-const Item = mongoose.model("Item", ItemSchema)
 
-module.exports =  { Code, Item };
+module.exports = Code ;

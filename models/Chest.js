@@ -6,10 +6,17 @@ const ChestSchema = new mongoose.Schema(
             type: String,
             index: true // Automatically creates an index on 'amount'
         },
-        chesttype: {
+        chestid: {
             type: String,
             index: true // Automatically creates an index on 'amount'
         },
+        itemid: [
+            {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: 'Item',
+                index: true // Automatically creates an index on 'amount'
+            }
+        ]
     },
     {
         timestamps: true

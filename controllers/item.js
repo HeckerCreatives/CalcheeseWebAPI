@@ -1,15 +1,13 @@
-const { Item } = require("../models/Code");
+const Item = require("../models/Item");
+const moment = require("moment");
 
 exports.createItem = async (req, res) => {
-    const { itemcode, name, type,  amount } = req.body;
+    const { itemid, itemname } = req.body;
 
-    if (!itemcode) return res.status(400).json({ message: "bad-request", data: "Please provide an item code!" });
-    if (!amount) return res.status(400).json({ message: "bad-request", data: "Please provide an amount!" });
-    if (amount < 0) return res.status(400).json({ message: "bad-request", data: "Amount must be at least 0!" });
-    if (!type) return res.status(400).json({ message: "bad-request", data: "Please provide an item type!" });
-    if (!name) return res.status(400).json({ message: "bad-request", data: "Please provide an item name!" });
+    if (!itemid) return res.status(400).json({ message: "bad-request", data: "Please provide an item id!" });
+    if (!itemname) return res.status(400).json({ message: "bad-request", data: "Please provide an item name!" });
 
-    const itemExists = await Item.findOne({ itemcode })
+    const itemExists = await Item.findOne({ itemid })
         .then(data => data)
         .catch(err => {
             console.log(`There's a problem checking the item data. Error ${err}`);
@@ -18,7 +16,7 @@ exports.createItem = async (req, res) => {
 
     if (itemExists) return res.status(400).json({ message: "bad-request", data: "Item already exists!" });
 
-    await Item.create({ itemcode, amount, itemname: name, itemtype: type, status: "to-generate", name: "", email: "", picture: "" })
+    await Item.create({ itemid, itemname })
         .then(data => data)
         .catch(err => {
             console.log(`There's a problem creating the item. Error ${err}`);
@@ -29,17 +27,15 @@ exports.createItem = async (req, res) => {
 };
 
 exports.getItems = async (req, res) => {
-    const { page, limit, status } = req.query;
+    const { page, limit } = req.query;
 
     const pageOptions = {
         page: parseInt(page) || 0,
         limit: parseInt(limit) || 10,
     };
 
-    const filter = {};
-    if (status) filter.status = status;
 
-    const totalDocs = await Item.countDocuments(filter)
+    const totalDocs = await Item.countDocuments()
         .then(data => data)
         .catch(err => {
             console.log(`There's a problem getting the items. Error ${err}`);
@@ -47,7 +43,7 @@ exports.getItems = async (req, res) => {
         });
 
     const totalPages = Math.ceil(totalDocs / pageOptions.limit);
-    const items = await Item.find(filter)
+    const items = await Item.find()
         .skip(pageOptions.page * pageOptions.limit)
         .limit(pageOptions.limit)
         .then(data => data)
@@ -58,14 +54,8 @@ exports.getItems = async (req, res) => {
 
     const finalData = items.map(item => ({
         id: item._id,
-        itemcode: item.itemcode,
+        itemid: item.itemid,
         itemname: item.itemname,
-        itemtype: item.itemtype,
-        name: item.name,
-        email: item.email,
-        picture: item.picture,
-        amount: item.amount,
-        status: item.status,
         createdAt: moment(item.createdAt).format("YYYY-MM-DD"),
     }));
 
@@ -77,24 +67,18 @@ exports.getItems = async (req, res) => {
 };
 
 exports.editItem = async (req, res) => {
-    const { itemid, itemcode, itemname, itemtype, amount, status, name, email } = req.body;
-    const { picture } = req.file ? req.file : "";
+    const { id, itemid, itemname } = req.body;
 
-    if (!itemid) return res.status(400).json({ message: "bad-request", data: "Please provide an item ID!" });
+    if (!id) return res.status(400).json({ message: "bad-request", data: "Please provide an ID!" });
 
     const updateData = {};
-    if (itemcode) updateData.itemcode = itemcode;
-    if (amount) updateData.amount = amount;
-    if (status) updateData.status = status;
-    if (name) updateData.name = name;
-    if (email) updateData.email = email;
-    if (picture) updateData.picture = picture;
+
     if (itemname) updateData.itemname = itemname;
-    if (itemtype) updateData.itemtype = itemtype;
+    if (itemid) updateData.itemid = itemid;
 
     if (Object.keys(updateData).length === 0) return res.status(400).json({ message: "bad-request", data: "Please provide at least one field to update!" });
 
-    const itemExists = await Item.findById(itemid)
+    const itemExists = await Item.findById(id)
         .then(data => data)
         .catch(err => {
             console.log(`There's a problem getting the item data. Error ${err}`);
@@ -114,11 +98,11 @@ exports.editItem = async (req, res) => {
 };
 
 exports.deleteItem = async (req, res) => {
-    const { itemid } = req.body;
+    const { id } = req.body;
 
-    if (!itemid) return res.status(400).json({ message: "bad-request", data: "Please provide an item ID!" });
+    if (!id) return res.status(400).json({ message: "bad-request", data: "Please provide an item ID!" });
 
-    const itemExists = await Item.findById(itemid)
+    const itemExists = await Item.findById(id)
         .then(data => data)
         .catch(err => {
             console.log(`There's a problem getting the item data. Error ${err}`);
@@ -127,7 +111,7 @@ exports.deleteItem = async (req, res) => {
 
     if (!itemExists) return res.status(400).json({ message: "bad-request", data: "Item does not exist!" });
 
-    await Item.findByIdAndDelete(itemid)
+    await Item.findByIdAndDelete(id)
         .then(data => data)
         .catch(err => {
             console.log(`There's a problem deleting the item. Error ${err}`);

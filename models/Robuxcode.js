@@ -4,29 +4,17 @@ const { default: mongoose } = require("mongoose");
 
 const RobuxCodeSchema = new mongoose.Schema(
     {
+        item: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Item',
+            index: true // Automatically creates an index on 'amount'
+        },
         robuxcode: {
             type: String,
             index: true // Automatically creates an index on 'amount'
         },
-        amount: {
-            type: Number,
-            index: true // Automatically creates an index on 'amount'
-        },
         name: {
             type: String,
-            index: true // Automatically creates an index on 'amount'
-        },
-        picture: {
-            type: String,
-            index: true // Automatically creates an index on 'amount'
-        },
-        email: {
-            type: String,
-            index: true // Automatically creates an index on 'amount'
-        },
-        code: {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: 'Code',
             index: true // Automatically creates an index on 'amount'
         },
         status: {
@@ -36,7 +24,7 @@ const RobuxCodeSchema = new mongoose.Schema(
         },
         isUsed: {
             type: Boolean,
-            default: true,
+            default: false,
             index: true 
         },
 
