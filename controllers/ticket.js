@@ -38,24 +38,37 @@ exports.getTickets = async (req, res) => {
     if (category) filter.category = category;
 
     const ticketTypes = await Ticket.find(filter)
+        .populate("item", "itemname itemid")
         .then(data => data)
         .catch(err => {
             console.log(`There's a problem fetching the ticket types. Error ${err}`);
             return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
         });
 
-    return res.json({ message: "success", data: ticketTypes });
+    const finalData = ticketTypes.map(ticket => ({
+        id: ticket._id,
+        ticketid: ticket.ticketid,
+        category: ticket.category,
+        tickettype: ticket.tickettype,
+        ticketname: ticket.ticketname,
+        item: ticket.item,
+        status: ticket.status,
+        createdAt: moment(ticket.createdAt).format("YYYY-MM-DD"),
+    }));
+
+    return res.json({ message: "success", data: finalData });
 };
 
 
 exports.updateTicket = async (req, res) => {
-    const { id, ticketid, category, tickettype, ticketname } = req.body;
+    const { id, ticketid, category, tickettype, ticketname, item } = req.body;
 
     const updateData = {};
     if (category) updateData.category = category;
     if (tickettype) updateData.tickettype = tickettype;
     if (ticketname) updateData.ticketname = ticketname;
     if (ticketid) updateData.ticketid = ticketid;
+    if (item) updateData.item = item;
 
     if (Object.keys(updateData).length === 0) return res.status(400).json({ message: "bad-request", data: "Please provide at least one field to update!" });
 

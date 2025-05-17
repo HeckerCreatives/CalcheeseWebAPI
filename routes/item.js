@@ -8,7 +8,7 @@ const { protectsuperadmin } = require('../middleware/middleware');
 router
     .post("/createitem", protectsuperadmin, createItem)
     .get("/getitems", protectsuperadmin, getItems)
-    .post("/updateitem", protectsuperadmin, editItem)
+    .post("/edititem", protectsuperadmin, editItem)
     .post("/deleteitem", protectsuperadmin, deleteItem)
 
 module.exports = router;

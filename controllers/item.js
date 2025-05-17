@@ -87,7 +87,7 @@ exports.editItem = async (req, res) => {
 
     if (!itemExists) return res.status(400).json({ message: "bad-request", data: "Item does not exist!" });
 
-    await Item.findByIdAndUpdate(itemid, { $set: updateData }, { new: true })
+    await Item.findByIdAndUpdate(id, { $set: updateData }, { new: true })
         .then(data => data)
         .catch(err => {
             console.log(`There's a problem updating the item. Error ${err}`);
