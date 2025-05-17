@@ -416,3 +416,130 @@ exports.redeemcode = async (req, res) => {
     }
 
 }
+
+exports.approverejectcode = async (req, res) => {
+
+    const { id, status } = req.body;
+
+    if (!id || !status) return res.status(400).json({ message: "bad-request", data: "Please provide a code and status!" });
+
+    const code = await Code.findById(id)
+        .then(data => data)
+        .catch(err => {
+            console.log(`There's a problem checking the code. Error ${err}`);
+            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+        });
+
+    if (code.status !== "claimed") return res.status(400).json({ message: "bad-request", data: "Code is not claimed!" });
+    if (status !== "approved" && status !== "rejected") return res.status(400).json({ message: "bad-request", data: "Invalid status!" });
+
+    if (status === "approved") {
+        code.status = "approved";
+    } else if (status === "rejected") {
+        code.status = "rejected";
+    }
+
+    if (code.type === "ticket" && code.ticket) {
+        const ticket = await Ticket.findById(code.ticket)
+            .then(data => data)
+            .catch(err => {
+                console.log(`There's a problem updating the ticket status. Error ${err}`);
+                return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+            });
+
+        if (ticket) {
+            ticket.status = status === "rejected" ? "rejected" : ticket.status;
+            await ticket.save()
+                .catch(err => {
+                    console.log(`There's a problem saving the ticket status. Error ${err}`);
+                    return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+                });
+        }
+    } else if (code.type === "robux" && code.robuxcode) {
+        const robuxcode = await RobuxCode.findById(code.robuxcode)
+            .then(data => data)
+            .catch(err => {
+                console.log(`There's a problem updating the robux code status. Error ${err}`);
+                return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+            });
+
+        if (robuxcode) {
+            robuxcode.status = status === "rejected" ? "rejected" : robuxcode.status;
+            await robuxcode.save()
+                .catch(err => {
+                    console.log(`There's a problem saving the robux code status. Error ${err}`);
+                    return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+                });
+        }
+    }
+
+    await code.save()
+       .then(data => data)
+       .catch(err => {
+            console.log(`There's a problem updating the code. Error ${err}`);
+            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+        });
+
+    return res.json({ message: "success" })
+}
+
+exports.deletecode = async (req, res) => {
+
+    const { id } = req.body;
+    if (!id) return res.status(400).json({ message: "bad-request", data: "Please provide a code!" });
+
+    const code = await Code.findById(id)
+        .then(data => data)
+        .catch(err => {
+            console.log(`There's a problem checking the code. Error ${err}`);
+            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+        });
+
+    if (!code) return res.status(400).json({ message: "bad-request", data: "Code does not exist!" });
+
+    if (code.status === "claimed") return res.status(400).json({ message: "bad-request", data: "Code has already been redeemed!" });
+
+    if (code.type === "ticket" && code.ticket) {
+        const ticket = await Ticket.findById(code.ticket)
+            .then(data => data)
+            .catch(err => {
+                console.log(`There's a problem checking the ticket. Error ${err}`);
+                return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+            });
+
+        if (ticket) {
+            ticket.status = "to-generate";
+            await ticket.save()
+                .catch(err => {
+                    console.log(`There's a problem saving the ticket status. Error ${err}`);
+                    return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+                });
+        }
+
+    } else if (code.type === "robux" && code.robuxcode) {
+        const robuxcode = await RobuxCode.findById(code.robuxcode)
+            .then(data => data)
+            .catch(err => {
+                console.log(`There's a problem checking the robux code. Error ${err}`);
+                return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+            });
+        
+        if (robuxcode) {
+            robuxcode.status = "to-generate";
+            await robuxcode.save()
+                .catch(err => {
+                    console.log(`There's a problem saving the robux code status. Error ${err}`);
+                    return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+                });
+        }
+    }
+
+    await Code.findByIdAndDelete(id)
+        .then(data => data)
+        .catch(err => {
+            console.log(`There's a problem deleting the code. Error ${err}`);
+            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+        });
+
+    return res.json({ message: "success" })
+}
