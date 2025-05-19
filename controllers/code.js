@@ -8,9 +8,9 @@ const { default: mongoose } = require("mongoose");
 
 
 exports.newgeneratecode = async (req, res) => {
-    const { chest, expiration, codeamount, item, type } = req.body;
+    const { chest, expiration, codeamount, items, type } = req.body;
 
-    if (!chest || !expiration || !codeamount || !item) {
+    if (!chest || !expiration || !codeamount || !items) {
         return res.status(400).json({ message: "failed", data: "Please fill in all the required fields!" });
     }
 
@@ -30,11 +30,22 @@ exports.newgeneratecode = async (req, res) => {
         }
 
         const codes = [];
+        const prefix = type === "robux" ? "RBX" : 
+                    type === "ticket" ? "TKT" : 
+                    type === "ingame" ? "IGM" : "";
+
         for (let i = 0; i < codeamount; i++) {
-            const code = Math.random().toString(36).substring(2, 14).toUpperCase();
-            codes.push(code);
+        const randomPart = Math.random().toString(36).substring(2, 11).toUpperCase();
+        const code = `${prefix}-${randomPart}`;
+        codes.push(code);
         }
 
+        const existingCodes = await Code.find({ code: { $in: codes } }).session(session);
+        if (existingCodes.length > 0) {
+        await session.abortTransaction();
+        session.endSession();
+        return res.status(400).json({ message: "failed", data: "Duplicate code generated. Please try again." });
+        }
         let codeData = [];
 
         if (type === "robux") {
@@ -62,7 +73,7 @@ exports.newgeneratecode = async (req, res) => {
                     chest: chesttype._id,
                     expiration: expiration,
                     code: generatedCode,
-                    items: item,
+                    items: items,
                     robuxcode: tempcode._id,
                     type: "robux",
                     isUsed: false,
@@ -93,7 +104,7 @@ exports.newgeneratecode = async (req, res) => {
                     chest: chesttype._id,
                     expiration: expiration,
                     code: generatedCode,
-                    items: item,
+                    items: items,
                     ticket: ticketDoc._id,
                     type: "ticket",
                     isUsed: false,
@@ -101,11 +112,12 @@ exports.newgeneratecode = async (req, res) => {
             }
         } else if (type === "ingame") {
             for (let i = 0; i < codeamount; i++) {
+                console.log(i)
                 codeData.push({
                     chest: chesttype._id,
                     expiration: expiration,
                     code: codes[i],
-                    items: item,
+                    items: items,
                     type: "ingame",
                     isUsed: false,
                 });
@@ -140,7 +152,7 @@ exports.getcodes = async (req, res) => {
 
     const filter = {};
     if (type) filter.type = type;
-    if (item) filter.items = new mongoose.Types.ObjectId(item);
+    if (item) filter.items = { $in: [new mongoose.Types.ObjectId(item)] };
     if (chest) filter.chest = new mongoose.Types.ObjectId(chest);
     if (status && ['to-generate', "to-claim", 'claimed', "approved", null].includes(status.toLowerCase())) {
         filter.status = status;
@@ -223,11 +235,11 @@ exports.getcodes = async (req, res) => {
                 chestid: code.chest.chestid,
                 chestname: code.chest.chestname,
             },
-            items: {
-                id: code.items._id,
-                itemid: code.items.itemid,
-                itemname: code.items.itemname,
-            },
+             items: code.items.map(item => ({
+                id: item._id,
+                itemid: item.itemid,
+                itemname: item.itemname,
+            })),
             expiration: moment(code.expiration).format("YYYY-MM-DD"),
             type: code.type,
             isUsed: code.isUsed,

@@ -11,11 +11,11 @@ const CodeSchema = new mongoose.Schema(
             type: Date,
             index: true // Automatically creates an index on 'amount'
         },
-        items: {      
+        items: [{      
             type: mongoose.Schema.Types.ObjectId,
             ref: 'Item',
             index: true // Automatically creates an index on 'amount'
-        },
+        }],
         robuxcode: {
             type: mongoose.Schema.Types.ObjectId,
             ref: 'RobuxCode',
