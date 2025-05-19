@@ -474,6 +474,7 @@ exports.redeemcode = async (req, res) => {
         codeExists.name = name;
         codeExists.email = email;
         codeExists.isUsed = true;
+        codeExists.status = "claimed";
 
         await codeExists.save();
         return res.json({ message: "success" })
