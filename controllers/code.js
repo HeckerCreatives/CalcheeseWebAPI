@@ -49,9 +49,12 @@ exports.newgeneratecode = async (req, res) => {
                     type === "ingame" ? "IGM" : "";
 
         for (let i = 0; i < codeamount; i++) {
-        const randomPart = Math.random().toString(36).substring(2, 11).toUpperCase();
-        const code = `${prefix}-${randomPart}`;
-        codes.push(code);
+            const randomChars   = Math.random().toString(36).substring(2, 11).toUpperCase();
+            const part1 = randomChars.substring(0, 3);
+            const part2 = randomChars.substring(3, 7);
+            const part3 = randomChars.substring(7, 11);
+            const code = `${prefix}-${part1}-${part2}-${part3}`;        
+            codes.push(code);
 
             if (i % Math.max(1, Math.floor(codeamount / 10)) === 0) {
                 const percentage = Math.round((i / codeamount) * 30) + 10; // 10-40% progress
@@ -219,7 +222,7 @@ exports.newgeneratecode = async (req, res) => {
                 success: true
             });
         }
-        
+
         res.json({ message: "success" });
     } catch (err) {
         console.log(`Transaction error: ${err}`);
@@ -304,6 +307,9 @@ exports.getcodes = async (req, res) => {
         {
             $limit: pageOptions.limit,
         },
+        {
+            $sort: { status: 1 }
+        }
     ])
         .then(data => data)
         .catch(err => {
@@ -365,8 +371,6 @@ exports.getcodes = async (req, res) => {
         return result;
     });
 
-    // used codes count
-
     const usedCodesCount = await Code.countDocuments({ ...filter, isUsed: true })
         .then(data => data)
         .catch(err => {
@@ -381,6 +385,13 @@ exports.getcodes = async (req, res) => {
             return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
         });
 
+    const expiredCodesCount = await Code.countDocuments({ ...filter, expiration: { $lt: new Date() } })
+        .then(data => data)
+        .catch(err => {
+            console.log(`There's a problem getting the expired codes count. Error ${err}`);
+            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+        });
+
     return res.json({
         message: "success",
         data: finalData,
@@ -388,6 +399,7 @@ exports.getcodes = async (req, res) => {
         totalDocs,
         usedCodesCount,
         unusedCodesCount,
+        expiredCodesCount,
     });
 }
 
@@ -406,6 +418,10 @@ exports.checkcode = async (req, res) => {
         });
 
     if (!codeExists) return res.status(400).json({ message: "bad-request", data: "Code does not exist!" });
+    if (codeExists.isUsed) return res.status(400).json({ message: "bad-request", data: "Code has already been redeemed!" });
+    if (codeExists.expiration < new Date()) return res.status(400).json({ message: "bad-request", data: "Code has expired!" });
+    if (codeExists.status === "claimed") return res.status(400).json({ message: "bad-request", data: "Code has already been redeemed!" });
+    if (codeExists.status === "to-generate") return res.status(400).json({ message: "bad-request", data: "Code is not available!" });
 
     const finaldata = {
         codetype: codeExists.type,
