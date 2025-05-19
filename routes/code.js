@@ -1,4 +1,4 @@
-const { newgeneratecode, getcodes, checkcode, redeemcode, approverejectcode, deletecode } = require('../controllers/code');
+const { newgeneratecode, getcodes, checkcode, redeemcode, approverejectcode, deletecode, exportCodesCSV } = require('../controllers/code');
 const { protectsuperadmin } = require('../middleware/middleware');
 
 const upload = require("../middleware/uploadpics")
@@ -20,4 +20,5 @@ router
     })}, redeemcode)
  .post("/approverejectcode", protectsuperadmin, approverejectcode)
  .post("/deletecode", protectsuperadmin, deletecode)
+ .get('/export-csv', exportCodesCSV);
 module.exports = router;

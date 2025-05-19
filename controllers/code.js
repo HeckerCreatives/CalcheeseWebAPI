@@ -6,6 +6,9 @@ const RobuxCode = require("../models/Robuxcode");
 const Ticket  = require("../models/Ticket");
 const { default: mongoose } = require("mongoose");
 const { io } = require('../app');
+const fs = require('fs');
+const path = require('path');
+const createCsvWriter = require('csv-writer').createObjectCsvWriter;
 
 exports.newgeneratecode = async (req, res) => {
     const { socketid, chest, expiration, codeamount, items, type } = req.body;
@@ -657,3 +660,90 @@ exports.deletecode = async (req, res) => {
 
     return res.json({ message: "success" })
 }
+
+
+exports.exportCodesCSV = async (req, res) => {
+
+        try {
+        const { type, item, chest, status, dateRange } = req.query;
+        
+        // Build filter
+        const filter = {};
+        if (type) filter.type = type;
+        if (item) filter.items = { $in: [new mongoose.Types.ObjectId(item)] };
+        if (chest) filter.chest = new mongoose.Types.ObjectId(chest);
+        if (status && ['to-generate', "to-claim", 'claimed', "approved", "rejected"].includes(status.toLowerCase())) {
+            filter.status = status;
+        }
+
+        // Date range filter
+        if (dateRange) {
+            const [startDate, endDate] = dateRange.split(',');
+            if (startDate && endDate) {
+                filter.createdAt = {
+                    $gte: new Date(startDate),
+                    $lte: new Date(endDate)
+                };
+            }
+        }
+
+        // Get only the code field for the matching documents
+        const codes = await Code.find(filter)
+            .select('code type')
+            .sort({ createdAt: -1 })
+            .lean();
+
+        if (!codes || codes.length === 0) {
+            return res.status(404).json({ message: "No codes found matching the criteria" });
+        }
+
+        // Prepare data for CSV - just the codes
+        const csvData = codes.map(code => ({
+            code: code.code,
+            type: code.type
+        }));
+
+        // Simple headers for codes only
+        const headers = [
+            { id: 'code', title: 'Code' },
+        ];
+        
+        // Create uploads directory if it doesn't exist
+        const uploadsDir = path.join(__dirname, '../uploads');
+        if (!fs.existsSync(uploadsDir)){
+            fs.mkdirSync(uploadsDir, { recursive: true });
+        }
+        
+        // Generate unique filename
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const filename = `codes_only_export_${timestamp}.csv`;
+        const filepath = path.join(uploadsDir, filename);
+        
+        // Create CSV writer
+        const csvWriter = createCsvWriter({
+            path: filepath,
+            header: headers
+        });
+        
+        // Write CSV file
+        await csvWriter.writeRecords(csvData);
+        
+        // Send file as download
+        res.download(filepath, filename, (err) => {
+            if (err) {
+                console.log('Error downloading file:', err);
+                return res.status(500).json({ message: "Error generating CSV" });
+            }
+            
+            // Delete the file after sending
+            fs.unlinkSync(filepath);
+        });
+        
+    } catch (err) {
+        console.log(`Error exporting codes to CSV: ${err}`);
+        return res.status(500).json({ 
+            message: "bad-request", 
+            data: "There's a problem generating the CSV file. Please try again or contact support." 
+        });
+    }
+};
