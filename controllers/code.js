@@ -189,9 +189,6 @@ exports.getcodes = async (req, res) => {
             },
         },
         {
-            $unwind: "$items",
-        },
-        {
             $lookup: {
                 from: "robuxcodes",
                 localField: "robuxcode",
@@ -227,6 +224,7 @@ exports.getcodes = async (req, res) => {
         });
 
     const finalData = codes.map(code => {
+        console.log(code.items)
         const result = {
             id: code._id,
             code: code.code,
