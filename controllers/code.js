@@ -5,10 +5,10 @@ const Item = require("../models/Item");
 const RobuxCode = require("../models/Robuxcode");
 const Ticket  = require("../models/Ticket");
 const { default: mongoose } = require("mongoose");
-
+const { io } = require('../app');
 
 exports.newgeneratecode = async (req, res) => {
-    const { chest, expiration, codeamount, items, type } = req.body;
+    const { socketid, chest, expiration, codeamount, items, type } = req.body;
 
     if (!chest || !expiration || !codeamount || !items) {
         return res.status(400).json({ message: "failed", data: "Please fill in all the required fields!" });
@@ -17,6 +17,14 @@ exports.newgeneratecode = async (req, res) => {
     if (codeamount <= 0) {
         return res.status(400).json({ message: "failed", data: "Please enter a valid code amount!" });
     }
+
+    if (socketid) {
+        io.to(socketid).emit('generate-progress', { 
+            percentage: 0,
+            status: 'Starting code generation...'
+        });
+    }
+    
 
     const session = await Code.startSession();
     session.startTransaction();
@@ -28,6 +36,12 @@ exports.newgeneratecode = async (req, res) => {
             session.endSession();
             return res.status(400).json({ message: "failed", data: "Invalid chest type!" });
         }
+        if (socketid) {
+            io.to(socketid).emit('generate-progress', { 
+                percentage: 10,
+                status: 'Generating code patterns...'
+            });
+        }
 
         const codes = [];
         const prefix = type === "robux" ? "RBX" : 
@@ -38,8 +52,24 @@ exports.newgeneratecode = async (req, res) => {
         const randomPart = Math.random().toString(36).substring(2, 11).toUpperCase();
         const code = `${prefix}-${randomPart}`;
         codes.push(code);
+
+            if (i % Math.max(1, Math.floor(codeamount / 10)) === 0) {
+                const percentage = Math.round((i / codeamount) * 30) + 10; // 10-40% progress
+                if (socketid) {
+                    io.to(socketid).emit('generate-progress', { 
+                        percentage,
+                        status: `Generating code patterns... ${i}/${codeamount}`
+                    });
+                }
+            }
         }
 
+        if (socketid) {
+            io.to(socketid).emit('generate-progress', { 
+                percentage: 40,
+                status: 'Checking for duplicate codes...'
+            });
+        }
         const existingCodes = await Code.find({ code: { $in: codes } }).session(session);
         if (existingCodes.length > 0) {
         await session.abortTransaction();
@@ -47,6 +77,13 @@ exports.newgeneratecode = async (req, res) => {
         return res.status(400).json({ message: "failed", data: "Duplicate code generated. Please try again." });
         }
         let codeData = [];
+
+        if (socketid) {
+            io.to(socketid).emit('generate-progress', { 
+                percentage: 50,
+                status: 'Preparing codes data...'
+            });
+        }
 
         if (type === "robux") {
             const temprobuxcodes = await RobuxCode.find({ status: "to-generate" }).session(session);
@@ -78,6 +115,16 @@ exports.newgeneratecode = async (req, res) => {
                     type: "robux",
                     isUsed: false,
                 });
+
+                if (i % Math.max(1, Math.floor(codeamount / 10)) === 0) {
+                    const percentage = Math.round((i / codeamount) * 20) + 60; // 60-80% progress
+                    if (socketid) {
+                        io.to(socketid).emit('generate-progress', { 
+                            percentage,
+                            status: `Processing Robux codes... ${i}/${codeamount}`
+                        });
+                    }
+                }
             }
         } else if (type === "ticket") {
             const availableTickets = await Ticket.find({ status: "to-generate" }).session(session);
@@ -109,6 +156,16 @@ exports.newgeneratecode = async (req, res) => {
                     type: "ticket",
                     isUsed: false,
                 });
+
+                if (i % Math.max(1, Math.floor(codeamount / 10)) === 0) {
+                    const percentage = Math.round((i / codeamount) * 20) + 60; // 60-80% progress
+                    if (socketid) {
+                        io.to(socketid).emit('generate-progress', { 
+                            percentage,
+                            status: `Processing Ticket codes... ${i}/${codeamount}`
+                        });
+                    }
+                }
             }
         } else if (type === "ingame") {
             for (let i = 0; i < codeamount; i++) {
@@ -121,17 +178,48 @@ exports.newgeneratecode = async (req, res) => {
                     type: "ingame",
                     isUsed: false,
                 });
+
+                if (i % Math.max(1, Math.floor(codeamount / 10)) === 0) {
+                    const percentage = Math.round((i / codeamount) * 20) + 60; // 60-80% progress
+                    if (socketid) {
+                        io.to(socketid).emit('generate-progress', { 
+                            percentage,
+                            status: `Processing In-Game codes... ${i}/${codeamount}`
+                        });
+                    }
+                }
             }
         } else {
             await session.abortTransaction();
             session.endSession();
             return res.status(400).json({ message: "failed", data: "Invalid type!" });
         }
-
+        if (socketid) {
+            io.to(socketid).emit('generate-progress', { 
+                percentage: 90,
+                status: 'Saving codes to database...'
+            });
+        }
+        
         await Code.insertMany(codeData, { session });
+        
+        if (socketid) {
+            io.to(socketid).emit('generate-progress', { 
+                percentage: 95,
+                status: 'Finalizing transaction...'
+            });
+        }
         await session.commitTransaction();
         session.endSession();
 
+        if (socketid) {
+            io.to(socketid).emit('generate-progress', { 
+                percentage: 100,
+                status: 'Complete',
+                success: true
+            });
+        }
+        
         res.json({ message: "success" });
     } catch (err) {
         console.log(`Transaction error: ${err}`);
@@ -224,7 +312,6 @@ exports.getcodes = async (req, res) => {
         });
 
     const finalData = codes.map(code => {
-        console.log(code.items)
         const result = {
             id: code._id,
             code: code.code,

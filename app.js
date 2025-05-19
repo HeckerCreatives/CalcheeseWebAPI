@@ -4,6 +4,7 @@ const bodyParser = require("body-parser");
 const cookieParser = require('cookie-parser');
 const http = require("http");
 const cors = require("cors");
+const socketio = require('socket.io');
 require("dotenv").config();
 
 const app = express();
@@ -23,6 +24,15 @@ const corsConfig = {
 
 app.use(cors(corsConfig));
 const server = http.createServer(app);
+const io = socketio(server, {
+    cors: {
+        origin: CORS_ALLOWED.split(" "),
+        methods: ["GET", "POST"],
+        credentials: true,
+    },
+});
+
+module.exports.io = io;
 
 mongoose
   .connect(process.env.DATABASE_URL, {
