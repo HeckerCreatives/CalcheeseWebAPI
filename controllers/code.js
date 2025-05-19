@@ -426,14 +426,10 @@ exports.checkcode = async (req, res) => {
     if (codeExists.status === "claimed") return res.status(400).json({ message: "bad-request", data: "Code has already been redeemed!" });
     if (codeExists.status === "to-generate") return res.status(400).json({ message: "bad-request", data: "Code is not available!" });
 
-    const finaldata = {
-        codetype: codeExists.type,
-        codestatus: codeExists.status
-    } 
 
     return res.json({
         message: "success",
-        data: finaldata
+        data: codeExists
     })
 }
 
@@ -665,7 +661,7 @@ exports.deletecode = async (req, res) => {
 exports.exportCodesCSV = async (req, res) => {
 
         try {
-        const { type, item, chest, status, dateRange } = req.query;
+        const { type, item, chest, status, dateRange, limit } = req.query;
         
         // Build filter
         const filter = {};
@@ -691,6 +687,7 @@ exports.exportCodesCSV = async (req, res) => {
         const codes = await Code.find(filter)
             .select('code type')
             .sort({ createdAt: -1 })
+            .limit(parseInt(limit) || 1500000) 
             .lean();
 
         if (!codes || codes.length === 0) {
