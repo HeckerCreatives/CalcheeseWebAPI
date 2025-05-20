@@ -324,6 +324,7 @@ exports.getcodes = async (req, res) => {
         const result = {
             id: code._id,
             code: code.code,
+            status: code.status,
             chest: {
                 id: code.chest._id,
                 chestid: code.chest.chestid,
@@ -408,30 +409,97 @@ exports.getcodes = async (req, res) => {
 
 // check code
 
+// exports.checkcode = async (req, res) => {
+//     const { code } = req.body;
+
+//     if (!code) return res.status(400).json({ message: "bad-request", data: "Please provide a code!" });
+
+//     const codeExists = await Code.findOne({ code: code })
+//         .then(data => data)
+//         .catch(err => {
+//             console.log(`There's a problem checking the code. Error ${err}`);
+//             return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+//         });
+
+//     if (!codeExists) return res.status(400).json({ message: "bad-request", data: "Code does not exist!" });
+//     if (codeExists.isUsed) return res.status(400).json({ message: "bad-request", data: "Code has already been redeemed!" });
+//     if (codeExists.expiration < new Date()) return res.status(400).json({ message: "bad-request", data: "Code has expired!" });
+//     if (codeExists.status === "claimed") return res.status(400).json({ message: "bad-request", data: "Code has already been redeemed!" });
+//     if (codeExists.status === "to-generate") return res.status(400).json({ message: "bad-request", data: "Code is not available!" });
+
+
+//     return res.json({
+//         message: "success",
+//         data: codeExists
+//     })
+// }
+
+
 exports.checkcode = async (req, res) => {
-    const { code } = req.body;
+  const { code } = req.body;
 
-    if (!code) return res.status(400).json({ message: "bad-request", data: "Please provide a code!" });
+  if (!code)
+    return res.status(400).json({
+      message: "bad-request",
+      data: "Please provide a code!",
+    });
 
-    const codeExists = await Code.findOne({ code: code })
-        .then(data => data)
-        .catch(err => {
-            console.log(`There's a problem checking the code. Error ${err}`);
-            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
-        });
+  try {
+    const codeExists = await Code.findOne({ code })
+      .populate('chest')              // Populate chest reference
+      .populate('items');             // Populate code's item references
 
-    if (!codeExists) return res.status(400).json({ message: "bad-request", data: "Code does not exist!" });
-    if (codeExists.isUsed) return res.status(400).json({ message: "bad-request", data: "Code has already been redeemed!" });
-    if (codeExists.expiration < new Date()) return res.status(400).json({ message: "bad-request", data: "Code has expired!" });
-    if (codeExists.status === "claimed") return res.status(400).json({ message: "bad-request", data: "Code has already been redeemed!" });
-    if (codeExists.status === "to-generate") return res.status(400).json({ message: "bad-request", data: "Code is not available!" });
+    if (!codeExists)
+      return res.status(400).json({
+        message: "bad-request",
+        data: "Code does not exist!",
+      });
 
+    if (codeExists.isUsed)
+      return res.status(400).json({
+        message: "bad-request",
+        data: "Code has already been redeemed!",
+      });
+
+    if (codeExists.expiration < new Date())
+      return res.status(400).json({
+        message: "bad-request",
+        data: "Code has expired!",
+      });
+
+    if (codeExists.status === "claimed")
+      return res.status(400).json({
+        message: "bad-request",
+        data: "Code has already been redeemed!",
+      });
+
+    if (codeExists.status === "to-generate")
+      return res.status(400).json({
+        message: "bad-request",
+        data: "Code is not available!",
+      });
+
+    // Populate itemid inside the chest
+    const populatedChest = await Chest.findById(codeExists.chest._id).populate('itemid');
 
     return res.json({
-        message: "success",
-        data: codeExists
-    })
-}
+      message: "success",
+      data: {
+        ...codeExists.toObject(),
+        chest: populatedChest, // Now contains populated itemid
+      },
+    });
+
+  } catch (err) {
+    console.error(`Error checking code: ${err}`);
+    return res.status(500).json({
+      message: "server-error",
+      data: "There's a problem with the server! Please contact customer support.",
+    });
+  }
+};
+
+
 
 exports.redeemcode = async (req, res) => {
 
