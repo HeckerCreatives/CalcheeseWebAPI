@@ -1,4 +1,4 @@
-const { createrobuxcode, getrobuxcodes, editrobuxcode, deleterobuxcode } = require('../controllers/robuxcode');
+const { createrobuxcode, getrobuxcodes, editrobuxcode, deleterobuxcode, generateTestRobuxCodes } = require('../controllers/robuxcode');
 const { protectsuperadmin } = require('../middleware/middleware');
 
 const upload = require("../middleware/uploadpics")
@@ -8,6 +8,7 @@ const router = require('express').Router();
 
 router
  .post("/createrobuxcode", protectsuperadmin, createrobuxcode)
+ .post("/generaterobuxcode", generateTestRobuxCodes)
  .get("/getrobuxcodes", protectsuperadmin, getrobuxcodes)
  .post("/editrobuxcode", protectsuperadmin,function (req, res, next) {
     uploadimg(req, res, function(err){

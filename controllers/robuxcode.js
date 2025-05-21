@@ -2,6 +2,15 @@ const RobuxCode = require("../models/Robuxcode")
 const moment = require("moment");
 
 
+function generateRobuxCode(length = 12) {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let code = '';
+  for (let i = 0; i < length; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return code;
+}
+
 exports.createrobuxcode = async (req, res) => {
 
     const { robuxcode, item, name } = req.body
@@ -86,6 +95,50 @@ exports.getrobuxcodes = async (req, res) => {
             data: "There's a problem with the server! Please contact customer support for more details."
         });
     }
+};
+
+exports.generateTestRobuxCodes = async (req, res) => {
+  try {
+    const { item, name, quantity } = req.body;
+
+    if (!item) return res.status(400).json({ message: "bad-request", data: "Please provide an item ID!" });
+    if (!name) return res.status(400).json({ message: "bad-request", data: "Please provide a name!" });
+    
+    const count = parseInt(quantity);
+    if (isNaN(count) || count <= 0 || count > 100) {
+      return res.status(400).json({ message: "bad-request", data: "Please provide a valid quantity (1–100)." });
+    }
+
+    const createdCodes = [];
+
+    for (let i = 0; i < count; i++) {
+      let robuxcode;
+      let exists = true;
+      let attempts = 0;
+
+      while (exists && attempts < 5) {
+        robuxcode = generateRobuxCode();
+        exists = await RobuxCode.findOne({ robuxcode });
+        attempts++;
+      }
+
+      if (!exists) {
+        const newCode = await RobuxCode.create({ robuxcode, item, name });
+        createdCodes.push(newCode.robuxcode);
+      }
+    }
+
+    return res.json({
+      message: "success",
+      data: {
+        totalGenerated: createdCodes.length,
+        codes: createdCodes,
+      },
+    });
+  } catch (err) {
+    console.error("Error generating test Robux codes:", err);
+    return res.status(500).json({ message: "server-error", data: "Something went wrong!" });
+  }
 };
 
 

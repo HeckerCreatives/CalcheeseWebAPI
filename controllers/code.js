@@ -338,6 +338,7 @@ exports.getcodes = async (req, res) => {
             expiration: moment(code.expiration).format("YYYY-MM-DD"),
             type: code.type,
             isUsed: code.isUsed,
+            claimdate: code.updatedAt
         };
 
         if (code.robuxcode && code.robuxcode._id) {
@@ -544,7 +545,14 @@ exports.redeemcode = async (req, res) => {
         codeExists.status = "claimed";
 
         await codeExists.save();
-        return res.json({ message: "success" })
+
+         return res.json({
+            message: "success",
+            data: {
+                code: codeExists.code,
+                type: codeExists.type,
+            }
+        }) 
         
     } else 
     // ticket redeem code
@@ -577,7 +585,13 @@ exports.redeemcode = async (req, res) => {
 
         await codeExists.save();
 
-        return res.json({ message: "success" })
+         return res.json({
+            message: "success",
+            data: {
+                code: codeExists.code,
+                type: codeExists.type,
+            }
+        }) 
     } else 
     // ingame redeem code
     if (codeExists.type === "ingame") {

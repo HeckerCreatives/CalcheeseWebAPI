@@ -1,5 +1,6 @@
 const Chest = require("../models/Chest");
 const moment = require("moment");
+const Code = require('../models/Code');
 
 // Create Chest
 exports.createchest = async (req, res) => {
@@ -70,6 +71,65 @@ exports.getchests = async (req, res) => {
         data: finalData,
         totalPages,
     });
+};
+
+exports.getChestCodeAnalytics = async (req, res) => {
+  try {
+    const analytics = await Code.aggregate([
+      {
+        $group: {
+          _id: { chest: "$chest", isUsed: "$isUsed" },
+          count: { $sum: 1 }
+        }
+      },
+      {
+        $group: {
+          _id: "$_id.chest",
+          claimed: {
+            $sum: {
+              $cond: [{ $eq: ["$_id.isUsed", true] }, "$count", 0]
+            }
+          },
+          unclaimed: {
+            $sum: {
+              $cond: [{ $eq: ["$_id.isUsed", false] }, "$count", 0]
+            }
+          }
+        }
+      },
+      {
+        $lookup: {
+          from: "chests",
+          localField: "_id",
+          foreignField: "_id",
+          as: "chest"
+        }
+      },
+      {
+        $unwind: "$chest"
+      },
+      {
+        $project: {
+          chestId: "$_id",
+          chestname: "$chest.chestname",
+          chestid: "$chest.chestid",
+          claimed: 1,
+          unclaimed: 1,
+        }
+      }
+    ]);
+
+    return res.json({
+      message: "success",
+      data: analytics
+    });
+  } catch (err) {
+    console.error("Error fetching code analytics by chest:", err);
+    return res.status(500).json({
+      message: "server-error",
+      data: "There was an error processing analytics."
+    });
+  }
 };
 
 // Update Chest

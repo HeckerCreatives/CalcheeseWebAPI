@@ -1,4 +1,4 @@
-const { Code, RedeemCode } = require("../models/Code");
+const Code = require("../models/Code");
 const { daily, weekly, monthly } = require("../utils/graphfilter");
 const { startOfYear, endOfYear, startOfWeek, endOfWeek } = require('date-fns');
 
@@ -9,7 +9,7 @@ exports.getcardanalytics = async (req, res) => {
     const { id } = req.user
 
 
-    const totalcodes = await Code.countDocuments()
+    const totalcodes = await Code.countDocuments({})
         .then(data => data)
         .catch(err => {
             console.log('Error fetching total codes:', err.message);
