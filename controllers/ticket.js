@@ -32,18 +32,34 @@ exports.createTicket = async (req, res) => {
 };
 
 exports.getTickets = async (req, res) => {
-    const { category } = req.query;
+    const { category, page, limit } = req.query;
+
+    const pageOptions = {
+        page: parseInt(page) || 0,
+        limit: parseInt(limit) || 10,
+    }
 
     const filter = {};
     if (category) filter.category = category;
 
     const ticketTypes = await Ticket.find(filter)
+        .skip(pageOptions.page * pageOptions.limit)
+        .limit(pageOptions.limit)
         .populate("item", "itemname itemid")
         .then(data => data)
         .catch(err => {
             console.log(`There's a problem fetching the ticket types. Error ${err}`);
             return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
         });
+
+    const totalCount = await Ticket.countDocuments(filter)
+        .then(data => data)
+        .catch(err => {
+            console.log(`There's a problem counting the ticket types. Error ${err}`);
+            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+        });
+
+    const totalPages = Math.ceil(totalCount / pageOptions.limit);
 
     const finalData = ticketTypes.map(ticket => ({
         id: ticket._id,
@@ -56,7 +72,7 @@ exports.getTickets = async (req, res) => {
         createdAt: moment(ticket.createdAt).format("YYYY-MM-DD"),
     }));
 
-    return res.json({ message: "success", data: finalData });
+    return res.json({ message: "success", data: finalData, totalpages: totalPages });
 };
 
 
