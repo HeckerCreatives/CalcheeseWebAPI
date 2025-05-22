@@ -1,3 +1,4 @@
+const { Analytics } = require("../models/Analytics");
 const RobuxCode = require("../models/Robuxcode")
 const moment = require("moment");
 
@@ -36,6 +37,17 @@ exports.createrobuxcode = async (req, res) => {
 
         return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." })
     })
+
+
+            await Analytics.findOneAndUpdate({},
+            { $inc: { totaltogenerate: 1 } },
+            { new: true }
+            )
+            .then(data => data)
+            .catch(err => {
+                console.log(`There's a problem updating the analytics. Error ${err}`);
+                return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+            });
 
     return res.json({ message: "success" })
 }

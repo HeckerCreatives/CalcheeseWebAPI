@@ -11,6 +11,7 @@ const path = require('path');
 const { generateRandomString } = require("../utils/codegenerator");
 const createCsvWriter = require('csv-writer').createObjectCsvWriter;
 const archiver = require('archiver');
+const { Analytics, RedeemedCodeAnalytics } = require("../models/Analytics");
 
 exports.newgeneratecode = async (req, res) => {
     const { socketid, chest, expiration, codeamount, items, type } = req.body;
@@ -197,6 +198,9 @@ exports.newgeneratecode = async (req, res) => {
                             });
                         }
                 }
+            const update = { $inc: { totaltoclaim: codeamount } };
+                
+            await Analytics.findOneAndUpdate({}, update, { new: true })
             return res.json({ message: "success" });
         } else {
             // await session.abortTransaction();
@@ -229,6 +233,17 @@ exports.newgeneratecode = async (req, res) => {
             });
         }
 
+
+            const update = { $inc: { totaltoclaim: codeamount } };
+            
+            if (type === 'robux' || type === 'ticket') {
+            update.$inc.totaltogenerate = -codeamount;
+            }
+
+            await Analytics.findOneAndUpdate({}, update, { new: true })
+
+            
+
         res.json({ message: "success" });
     } catch (err) {
         console.log(`Transaction error: ${err}`);
@@ -241,7 +256,7 @@ exports.newgeneratecode = async (req, res) => {
 
 exports.getcodes = async (req, res) => {
 
-    const { page, limit, type, item, chest, status, expired } = req.query;
+    const { page, limit, type, item, chest, status } = req.query;
     const pageOptions = {
         page: parseInt(page) || 0,
         limit: parseInt(limit) || 10,
@@ -252,9 +267,10 @@ exports.getcodes = async (req, res) => {
     if (item) filter.items = { $in: [new mongoose.Types.ObjectId(item)] };
     if (chest) filter.chest = new mongoose.Types.ObjectId(chest);
     if (status && ['to-generate', "to-claim", 'claimed', "approved", "expired", null].includes(status.toLowerCase())) {
-        filter.status = status;
         if (status.toLowerCase() === "expired") {
-            filter.expiration = { $lt: new Date() };
+            filter.expiration = { $lte: new Date() };
+        } else {
+            filter.status = status;
         }
     }
 
@@ -385,34 +401,48 @@ exports.getcodes = async (req, res) => {
         return result;
     });
 
-    const usedCodesCount = await Code.countDocuments({ ...filter, isUsed: true })
-        .then(data => data)
-        .catch(err => {
-            console.log(`There's a problem getting the used codes count. Error ${err}`);
-            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
-        });
-
-    const unusedCodesCount = await Code.countDocuments({ ...filter, isUsed: false })
-        .then(data => data)
-        .catch(err => {
-            console.log(`There's a problem getting the unused codes count. Error ${err}`);
-            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
-        });
-
-    const expiredCodesCount = await Code.countDocuments({ ...filter, expiration: { $lt: new Date() } })
+    const expiredCodesCount = await Code.countDocuments({
+        ...filter,
+        expiration: { $lt: new Date() },
+        isUsed: false,
+        status: { $nin: ["approved", "claimed"] }
+    })        
         .then(data => data)
         .catch(err => {
             console.log(`There's a problem getting the expired codes count. Error ${err}`);
             return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
         });
 
+    const AnalyticsData = await Analytics.findOne({})
+        .then(data => data)
+        .catch(err => {
+            console.log(`There's a problem getting the analytics data. Error ${err}`);
+            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+        });
+
+        if (expiredCodesCount > 0) {
+            if (AnalyticsData.totalexpired !== expiredCodesCount) {
+                const diff = expiredCodesCount - (AnalyticsData.totalexpired || 0);
+                await Analytics.findOneAndUpdate(
+                    {},
+                    { 
+                        $set: { totalexpired: expiredCodesCount },
+                        $inc: { totaltoclaim: -diff }
+                    },
+                    { new: true }
+                )
+                .then(data => data)
+                .catch(err => {
+                    console.log(`There's a problem updating the analytics. Error ${err}`);
+                    return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+                });
+            }
+        }
     return res.json({
         message: "success",
         data: finalData,
         totalPages,
         totalDocs,
-        usedCodesCount,
-        unusedCodesCount,
         expiredCodesCount,
     });
 }
@@ -554,7 +584,24 @@ exports.redeemcode = async (req, res) => {
         codeExists.status = "claimed";
 
         await codeExists.save();
+        await Analytics.findOneAndUpdate({},
+            { $inc: { totalclaimed: 1, totaltoclaim: -1 } },
+            { new: true }
+        )
+        .then(data => data)
+        .catch(err => {
+            console.log(`There's a problem updating the analytics. Error ${err}`);
+            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+        });
 
+        await RedeemedCodeAnalytics.create({
+            code: codeExists._id,
+        })
+        .then(data => data)
+        .catch(err => {
+            console.log(`There's a problem creating the redeemed code analytics. Error ${err}`);
+            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+        });
          return res.json({
             message: "success",
             data: {
@@ -566,7 +613,6 @@ exports.redeemcode = async (req, res) => {
     } else 
     // ticket redeem code
     if (codeExists.type === "ticket") {
-        console.log(guardian, contact, address, name, email, picture)
         if (!guardian || !contact || !address || !name || !email || !picture) return res.status(400).json({ message: "bad-request", data: "Please fill in all the required fields!" });
 
         const ticket = await Ticket.findById(codeExists.ticket)
@@ -593,6 +639,24 @@ exports.redeemcode = async (req, res) => {
         codeExists.status = "claimed";
 
         await codeExists.save();
+        await Analytics.findOneAndUpdate({},
+            { $inc: { totalclaimed: 1, totaltoclaim: -1 } },
+            { new: true }
+        )
+        .then(data => data)
+        .catch(err => {
+            console.log(`There's a problem updating the analytics. Error ${err}`);
+            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+        });
+        
+        await RedeemedCodeAnalytics.create({
+            code: codeExists._id,
+        })
+        .then(data => data)
+        .catch(err => {
+            console.log(`There's a problem creating the redeemed code analytics. Error ${err}`);
+            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+        });
 
          return res.json({
             message: "success",
@@ -609,6 +673,25 @@ exports.redeemcode = async (req, res) => {
         codeExists.isUsed = true;
         codeExists.status = "approved";
         await codeExists.save();
+
+        await Analytics.findOneAndUpdate({},
+            { $inc: { totalclaimed: 1, totaltoclaim: -1 } },
+            { new: true }
+        )
+        .then(data => data)
+        .catch(err => {
+            console.log(`There's a problem updating the analytics. Error ${err}`);
+            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+        });
+        
+        await RedeemedCodeAnalytics.create({
+            code: codeExists._id,
+        })
+        .then(data => data)
+        .catch(err => {
+            console.log(`There's a problem creating the redeemed code analytics. Error ${err}`);
+            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+        });
 
         return res.json({
             message: "success",
@@ -677,6 +760,17 @@ exports.approverejectcode = async (req, res) => {
         }
     }
 
+    await Analytics.findOneAndUpdate({},
+        { $inc: { totalapproved: status === "approved" ? 1 : 0, totalclaimed: -1 } },
+        { new: true }
+    )
+    .then(data => data)
+    .catch(err => {
+        console.log(`There's a problem updating the analytics. Error ${err}`);
+        return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+    });
+
+    
     await code.save()
        .then(data => data)
        .catch(err => {
@@ -737,6 +831,27 @@ exports.deletecode = async (req, res) => {
                 });
         }
     }
+
+        const checkisexpired = code.expiration < new Date() ? true : false;
+
+
+        await Analytics.findOneAndUpdate({},
+            {
+                $inc: {
+                    totalclaimed: code.isUsed ? -1 : 0,
+                    totalapproved: code.status === "approved" ? -1 : 0,
+                    totaltogenerate: code.status === "to-generate" ? -1 : 0,
+                    totaltoclaim: code.status === "to-claim" ? -1 : 0,
+                    totalexpired: checkisexpired ? 1 : 0,
+                }
+            },
+            { new: true }
+        )
+        .then(data => data)
+        .catch(err => {
+            console.log(`There's a problem updating the analytics. Error ${err}`);
+            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+        });
 
     await Code.findByIdAndDelete(id)
         .then(data => data)

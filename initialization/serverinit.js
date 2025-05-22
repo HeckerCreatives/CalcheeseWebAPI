@@ -4,6 +4,7 @@ const Userdetails = require("../models/Userdetails")
 const Chest = require("../models/Chest")
 const SocialLink = require("../models/Sociallinks");
 const Code = require("../models/Code");
+const { Analytics } = require("../models/Analytics");
 
 exports.initialize = async () => {
     
@@ -107,6 +108,18 @@ exports.initialize = async () => {
         console.log("Default social links created");
     }
 
+         const analytics = await Analytics.findOne();
+        
+                if (!analytics) {
+                    const newAnalytics = new Analytics({
+                    totalclaimed: 0,
+                    totalapproved: 0,
+                    totaltogenerate: 0,
+                    totaltoclaim: 0,
+                    totalexpired: 0,
+                    });
+                    await newAnalytics.save();
+                } 
 
     console.log("DONE SERVER INITIALIZATION")
 }

@@ -1,51 +1,46 @@
+const { Analytics, RedeemedCodeAnalytics } = require("../models/Analytics");
 const Code = require("../models/Code");
+const RobuxCode = require("../models/Robuxcode");
+const Ticket = require("../models/Ticket");
 const { daily, weekly, monthly } = require("../utils/graphfilter");
 const { startOfYear, endOfYear, startOfWeek, endOfWeek } = require('date-fns');
 
 
 
 exports.getcardanalytics = async (req, res) => {
-
-    const { id } = req.user
-
-
-    const totalcodes = await Code.countDocuments({})
+    let totalAnalytics = await Analytics.findOne()
         .then(data => data)
         .catch(err => {
-            console.log('Error fetching total codes:', err.message);
-
-            res.status(400).json({ message: "bad-request", data: "There's a problem with your account! Please contact customer support for more details."  })
+            console.log(`There's a problem getting the analytics data. Error ${err}`)
+            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." })
         })
 
-    const totalusedcodes = await Code.countDocuments({ isUsed: true })
-        .then(data => data)
-        .catch(err => {
-            console.log('Error fetching total used codes:', err.message);
-
-            res.status(400).json({ message: "bad-request", data: "There's a problem with your account! Please contact customer support for more details."  })
-        })
-
-    const totalunusedcodes = await Code.countDocuments({ isUsed: false })
-        .then(data => data)
-        .catch(err => {
-            console.log('Error fetching total unused codes:', err.message);
-
-            res.status(400).json({ message: "bad-request", data: "There's a problem with your account! Please contact customer support for more details."  })
-        })
-
-    const totalexpiredcodes = await Code.countDocuments({ expiration: { $lt: new Date() } })
-        .then(data => data)
-        .catch(err => {
-            console.log('Error fetching total expired codes:', err.message);
-
-            res.status(400).json({ message: "bad-request", data: "There's a problem with your account! Please contact customer support for more details."  })
-        })
+        const expiredCodesCount = await Code.countDocuments({
+            expiration: { $lt: new Date() },
+            isUsed: false,
+            status: { $nin: ["approved", "claimed"] }
+        })        
+            .then(data => data)
+            .catch(err => {
+                console.log(`There's a problem getting the expired codes count. Error ${err}`);
+                return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+            });
+    
+    
+            if (expiredCodesCount > 0) {
+                if (totalAnalytics.totalexpired !== expiredCodesCount) {
+                    const diff = expiredCodesCount - (totalAnalytics.totalexpired || 0);
+                    totalAnalytics.totalexpired = expiredCodesCount;
+                    totalAnalytics.totaltoclaim -= diff;
+                }
+            }
 
     const finaldata = {
-        totalcodes: totalcodes,
-        totalusedcodes: totalusedcodes,
-        totalunusedcodes: totalunusedcodes,
-        totalexpiredcodes: totalexpiredcodes
+        totalcodes: totalAnalytics.totaltogenerate + totalAnalytics.totaltoclaim + totalAnalytics.totalclaimed + totalAnalytics.totalexpired + totalAnalytics.totalapproved,  
+        totalusedcodes: totalAnalytics.totalclaimed,
+        totalunusedcodes: totalAnalytics.totaltoclaim,
+        totalexpiredcodes: totalAnalytics.totalexpired,
+        totalapproved: totalAnalytics.totalapproved,
     }
 
     return res.json({ message: "success", data: finaldata })
@@ -133,44 +128,45 @@ exports.redeemCodeAnalytics = async (req, res) => {
         return res.status(400).json({ message: "failed", data: "Invalid filter. Use 'daily', 'weekly', 'monthly', or 'yearly'." });
     }
 
-    // const data = await RedeemCode.aggregate([
-    //     { $match: matchCondition },
-    //     { $project: projectCondition },
-    //     { $group: groupCondition },
-    //     { $sort: sortCondition }
-    // ]);
+    const data = await RedeemedCodeAnalytics.aggregate([
+        { $match: matchCondition },
+        { $project: projectCondition },
+        { $group: groupCondition },
+        { $sort: sortCondition }
+    ]);
 
-    // let finalData = {};
+    console.log(data);
+    let finalData = {};
 
-    // // Filtering data
-    // if (filter === 'daily') {
-    //     daily.forEach((time, index) => {
-    //         const matchingEntry = data.find(entry => entry._id.hour === index + 1);
-    //         finalData[time] = matchingEntry ? matchingEntry.value : 0;
-    //     });
-    // } else if (filter === 'weekly') {
-    //     weekly.forEach((weekday, index) => {
-    //         const matchingEntry = data.find(entry => entry._id.day === index + 1);
-    //         finalData[weekday] = matchingEntry ? matchingEntry.value : 0;
-    //     });
-    // } else if (filter === 'monthly') {
-    //     monthly.forEach((month, index) => {
-    //         const matchingEntry = data.find(entry => entry._id.month === index + 1);
-    //         finalData[month] = matchingEntry ? matchingEntry.value : 0;
-    //     });
-    // } else if (filter === 'yearly') {
-    //     const releasedYear = 2024;
-    //     const currentYear = new Date("2030-11-08").getFullYear();
+    // Filtering data
+    if (filter === 'daily') {
+        daily.forEach((time, index) => {
+            const matchingEntry = data.find(entry => entry._id.hour === index + 1);
+            finalData[time] = matchingEntry ? matchingEntry.value : 0;
+        });
+    } else if (filter === 'weekly') {
+        weekly.forEach((weekday, index) => {
+            const matchingEntry = data.find(entry => entry._id.day === index + 1);
+            finalData[weekday] = matchingEntry ? matchingEntry.value : 0;
+        });
+    } else if (filter === 'monthly') {
+        monthly.forEach((month, index) => {
+            const matchingEntry = data.find(entry => entry._id.month === index + 1);
+            finalData[month] = matchingEntry ? matchingEntry.value : 0;
+        });
+    } else if (filter === 'yearly') {
+        const releasedYear = 2024;
+        const currentYear = new Date("2030-11-08").getFullYear();
 
-    //     for (let year = releasedYear; year <= currentYear; year++) {
-    //         const matchingEntry = data.find(entry => entry._id.year === parseInt(year, 10));
-    //         finalData[year] = matchingEntry ? matchingEntry.value : 0;
-    //     }
-    // } else {
-    //     return res.status(400).json({ message: "failed", data: "Invalid filter. Use 'daily', 'weekly', 'monthly', or 'yearly'." });
-    // }
+        for (let year = releasedYear; year <= currentYear; year++) {
+            const matchingEntry = data.find(entry => entry._id.year === parseInt(year, 10));
+            finalData[year] = matchingEntry ? matchingEntry.value : 0;
+        }
+    } else {
+        return res.status(400).json({ message: "failed", data: "Invalid filter. Use 'daily', 'weekly', 'monthly', or 'yearly'." });
+    }
 
-    // return res.json({ message: "success", data: finalData });
+    return res.json({ message: "success", data: finalData });
 };
 
 exports.redeemCodeStatusAnalytics = async (req, res) => {
