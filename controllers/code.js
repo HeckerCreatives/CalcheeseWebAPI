@@ -8,7 +8,9 @@ const { default: mongoose } = require("mongoose");
 const { io } = require('../app');
 const fs = require('fs');
 const path = require('path');
+const { generateRandomString } = require("../utils/codegenerator");
 const createCsvWriter = require('csv-writer').createObjectCsvWriter;
+const archiver = require('archiver');
 
 exports.newgeneratecode = async (req, res) => {
     const { socketid, chest, expiration, codeamount, items, type } = req.body;
@@ -29,14 +31,15 @@ exports.newgeneratecode = async (req, res) => {
     }
     
 
-    const session = await Code.startSession();
-    session.startTransaction();
+    // const session = await Code.startSession();
+    // session.startTransaction();
 
     try {
-        const chesttype = await Chest.findById(chest).session(session);
+        const chesttype = await Chest.findById(chest)
+        // .session(session);
         if (!chesttype) {
-            await session.abortTransaction();
-            session.endSession();
+            // await session.abortTransaction();
+            // session.endSession();
             return res.status(400).json({ message: "failed", data: "Invalid chest type!" });
         }
         if (socketid) {
@@ -52,11 +55,11 @@ exports.newgeneratecode = async (req, res) => {
                     type === "ingame" ? "IGM" : "";
 
         for (let i = 0; i < codeamount; i++) {
-            const randomChars   = Math.random().toString(36).substring(2, 11).toUpperCase();
-            const part1 = randomChars.substring(0, 3);
-            const part2 = randomChars.substring(3, 7);
-            const part3 = randomChars.substring(7, 11);
-            const code = `${prefix}-${part1}-${part2}-${part3}`;        
+            const randomChars = generateRandomString(12); // Always 10 chars
+            const part1 = randomChars.substring(0, 4);
+            const part2 = randomChars.substring(4, 8);
+            const part3 = randomChars.substring(8, 12);
+            const code = `${prefix}-${part1}-${part2}-${part3}`;
             codes.push(code);
 
             if (i % Math.max(1, Math.floor(codeamount / 10)) === 0) {
@@ -76,12 +79,6 @@ exports.newgeneratecode = async (req, res) => {
                 status: 'Checking for duplicate codes...'
             });
         }
-        const existingCodes = await Code.find({ code: { $in: codes } }).session(session);
-        if (existingCodes.length > 0) {
-        await session.abortTransaction();
-        session.endSession();
-        return res.status(400).json({ message: "failed", data: "Duplicate code generated. Please try again." });
-        }
         let codeData = [];
 
         if (socketid) {
@@ -90,6 +87,7 @@ exports.newgeneratecode = async (req, res) => {
                 status: 'Preparing codes data...'
             });
         }
+
 
         if (type === "robux") {
             const temprobuxcodes = await RobuxCode.find({ status: "to-generate" }).session(session);
@@ -133,16 +131,17 @@ exports.newgeneratecode = async (req, res) => {
                 }
             }
         } else if (type === "ticket") {
-            const availableTickets = await Ticket.find({ status: "to-generate" }).session(session);
+            const availableTickets = await Ticket.find({ status: "to-generate" })
+            // .session(session);
             if (!availableTickets || availableTickets.length === 0) {
-                await session.abortTransaction();
-                session.endSession();
+                // await session.abortTransaction();
+                // session.endSession();
                 return res.status(400).json({ message: "failed", data: "No available tickets!" });
             }
 
             if (codeamount > availableTickets.length) {
-                await session.abortTransaction();
-                session.endSession();
+                // await session.abortTransaction();
+                // session.endSession();
                 return res.status(400).json({ message: "failed", data: "Requested ticket quantity exceeds available quantity!" });
             }
 
@@ -151,7 +150,7 @@ exports.newgeneratecode = async (req, res) => {
                 const generatedCode = codes[i];
 
                 ticketDoc.status = "to-claim";
-                await ticketDoc.save({ session });
+                await ticketDoc.save();
 
                 codeData.push({
                     chest: chesttype._id,
@@ -174,30 +173,34 @@ exports.newgeneratecode = async (req, res) => {
                 }
             }
         } else if (type === "ingame") {
-            for (let i = 0; i < codeamount; i++) {
-                console.log(i)
-                codeData.push({
-                    chest: chesttype._id,
-                    expiration: expiration,
-                    code: codes[i],
-                    items: items,
-                    type: "ingame",
-                    isUsed: false,
-                });
-
-                if (i % Math.max(1, Math.floor(codeamount / 10)) === 0) {
-                    const percentage = Math.round((i / codeamount) * 20) + 60; // 60-80% progress
-                    if (socketid) {
-                        io.to(socketid).emit('generate-progress', { 
-                            percentage,
-                            status: `Processing In-Game codes... ${i}/${codeamount}`
+            const BATCH_SIZE = 100000;
+                for (let batchStart = 0; batchStart < codeamount; batchStart += BATCH_SIZE) {
+                    const batchEnd = Math.min(batchStart + BATCH_SIZE, codeamount);
+                    let codeData = [];
+                    for (let i = batchStart; i < batchEnd; i++) {
+                        codeData.push({
+                            chest: chesttype._id,
+                            expiration: expiration,
+                            code: codes[i],
+                            items: items,
+                            type: type,
+                            isUsed: false,
                         });
                     }
+                    await Code.insertMany(codeData);
+
+                        if (socketid) {
+                            const percentage = Math.round(((batchEnd) / codeamount) * 40) + 50; // 50-90% progress
+                            io.to(socketid).emit('generate-progress', {
+                                percentage,
+                                status: `Saving In-Game codes. Progress: ${batchEnd.toLocaleString()}/${codeamount.toLocaleString()}`
+                            });
+                        }
                 }
-            }
+            return res.json({ message: "success" });
         } else {
-            await session.abortTransaction();
-            session.endSession();
+            // await session.abortTransaction();
+            // session.endSession();
             return res.status(400).json({ message: "failed", data: "Invalid type!" });
         }
         if (socketid) {
@@ -207,7 +210,7 @@ exports.newgeneratecode = async (req, res) => {
             });
         }
         
-        await Code.insertMany(codeData, { session });
+        await Code.insertMany(codeData);
         
         if (socketid) {
             io.to(socketid).emit('generate-progress', { 
@@ -215,8 +218,8 @@ exports.newgeneratecode = async (req, res) => {
                 status: 'Finalizing transaction...'
             });
         }
-        await session.commitTransaction();
-        session.endSession();
+        // await session.commitTransaction();
+        // session.endSession();
 
         if (socketid) {
             io.to(socketid).emit('generate-progress', { 
@@ -229,8 +232,8 @@ exports.newgeneratecode = async (req, res) => {
         res.json({ message: "success" });
     } catch (err) {
         console.log(`Transaction error: ${err}`);
-        await session.abortTransaction();
-        session.endSession();
+        // await session.abortTransaction();
+        // session.endSession();
         return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
     }
 };
@@ -238,7 +241,7 @@ exports.newgeneratecode = async (req, res) => {
 
 exports.getcodes = async (req, res) => {
 
-    const { page, limit, type, item, chest, status } = req.query;
+    const { page, limit, type, item, chest, status, expired } = req.query;
     const pageOptions = {
         page: parseInt(page) || 0,
         limit: parseInt(limit) || 10,
@@ -248,9 +251,15 @@ exports.getcodes = async (req, res) => {
     if (type) filter.type = type;
     if (item) filter.items = { $in: [new mongoose.Types.ObjectId(item)] };
     if (chest) filter.chest = new mongoose.Types.ObjectId(chest);
-    if (status && ['to-generate', "to-claim", 'claimed', "approved", null].includes(status.toLowerCase())) {
+    if (status && ['to-generate', "to-claim", 'claimed', "approved", "expired", null].includes(status.toLowerCase())) {
         filter.status = status;
+        if (status.toLowerCase() === "expired") {
+            filter.expiration = { $lt: new Date() };
+        }
     }
+
+
+
     const totalDocs = await Code.countDocuments(filter)
         .then(data => data)
         .catch(err => {
@@ -311,7 +320,7 @@ exports.getcodes = async (req, res) => {
             $limit: pageOptions.limit,
         },
         {
-            $sort: { status: 1 }
+            $sort: { expiration: -1 }
         }
     ])
         .then(data => data)
@@ -743,8 +752,9 @@ exports.deletecode = async (req, res) => {
 exports.exportCodesCSV = async (req, res) => {
 
         try {
-        const { type, item, chest, status, dateRange, limit } = req.query;
-        
+        const { type, item, chest, status, dateRange, start, end } = req.query;
+        const CHUNK_SIZE = parseInt(end) || 5000000; // Default 1 million per file
+
         // Build filter
         const filter = {};
         if (type) filter.type = type;
@@ -765,58 +775,78 @@ exports.exportCodesCSV = async (req, res) => {
             }
         }
 
+        const startIndex = Math.max(parseInt(start) || 1, 1) - 1; // 0-based index
+        const endIndex = parseInt(end) || (startIndex + 10000000);
+        const limit = endIndex - startIndex;
         // Get only the code field for the matching documents
-        const codes = await Code.find(filter)
-            .select('code type')
-            .sort({ createdAt: -1 })
-            .limit(parseInt(limit) || 1500000) 
-            .lean();
-
-        if (!codes || codes.length === 0) {
+        const totalDocs = await Code.countDocuments(filter);
+        if (totalDocs === 0) {
             return res.status(404).json({ message: "No codes found matching the criteria" });
         }
-
-        // Prepare data for CSV - just the codes
-        const csvData = codes.map(code => ({
-            code: code.code,
-            type: code.type
-        }));
+        const uploadsDir = path.join(__dirname, '../uploads');
+        if (!fs.existsSync(uploadsDir)){
+            fs.mkdirSync(uploadsDir, { recursive: true });
+        }
 
         // Simple headers for codes only
         const headers = [
             { id: 'code', title: 'Code' },
         ];
         
-        // Create uploads directory if it doesn't exist
-        const uploadsDir = path.join(__dirname, '../uploads');
-        if (!fs.existsSync(uploadsDir)){
-            fs.mkdirSync(uploadsDir, { recursive: true });
-        }
-        
-        // Generate unique filename
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const filename = `codes_only_export_${timestamp}.csv`;
-        const filepath = path.join(uploadsDir, filename);
-        
-        // Create CSV writer
-        const csvWriter = createCsvWriter({
-            path: filepath,
-            header: headers
-        });
-        
-        // Write CSV file
-        await csvWriter.writeRecords(csvData);
-        
-        // Send file as download
-        res.download(filepath, filename, (err) => {
-            if (err) {
-                console.log('Error downloading file:', err);
-                return res.status(500).json({ message: "Error generating CSV" });
-            }
+        let fileList = [];
+        for (let skip = 0, fileNum = 1; skip < totalDocs; skip += CHUNK_SIZE, fileNum++) {
+            const codes = await Code.find(filter)
+                .select('code')
+                .sort({ createdAt: -1 })
+                .skip(skip)
+                .limit(CHUNK_SIZE)
+                .lean();
+
+            const csvData = codes.map(code => ({
+                code: code.code,
+            }));
+
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const filename = `codes_export_${timestamp}_part${fileNum}.csv`;
+            const filepath = path.join(uploadsDir, filename);
+
+            const csvWriter = createCsvWriter({
+                path: filepath,
+                header: headers
+            });
+
+            await csvWriter.writeRecords(csvData);
             
-            // Delete the file after sending
-            fs.unlinkSync(filepath);
+            fileList.push(filename);
+        }
+
+
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const zipFilename = `codes_export_${timestamp}.zip`;
+        const zipPath = path.join(uploadsDir, zipFilename);
+        const output = fs.createWriteStream(zipPath);
+        const archive = archiver('zip', { zlib: { level: 9 } });
+
+        output.on('close', () => {
+            res.download(zipPath, zipFilename, (err) => {
+                if (err) {
+                    console.log('Error downloading zip:', err);
+                    return res.status(500).json({ message: "Error generating ZIP" });
+                }
+                fs.unlinkSync(zipPath); // optional: delete zip after download
+                // Optionally, also delete the CSV files here if you want
+                fileList.forEach(filename => {
+                    const filePath = path.join(uploadsDir, filename);
+                    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+                });
+            });
         });
+
+        archive.pipe(output);
+        fileList.forEach(filename => {
+            archive.file(path.join(uploadsDir, filename), { name: filename });
+        });
+        archive.finalize();
         
     } catch (err) {
         console.log(`Error exporting codes to CSV: ${err}`);

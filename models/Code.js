@@ -74,6 +74,17 @@ const CodeSchema = new mongoose.Schema(
     }
 )
 
+// Pre-save hook to check for duplicate code
+CodeSchema.pre('save', async function(next) {
+    if (!this.isModified('code')) return next();
+    const existing = await mongoose.models.Code.findOne({ code: this.code });
+    if (existing) {
+        const err = new Error('Duplicate code detected');
+        err.name = 'DuplicateCodeError';
+        return next(err);
+    }
+    next();
+});
 
 const Code = mongoose.model("Code", CodeSchema)
 

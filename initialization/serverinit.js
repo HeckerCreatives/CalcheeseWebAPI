@@ -3,6 +3,7 @@ const Users = require("../models/Users")
 const Userdetails = require("../models/Userdetails")
 const Chest = require("../models/Chest")
 const SocialLink = require("../models/Sociallinks");
+const Code = require("../models/Code");
 
 exports.initialize = async () => {
     
@@ -29,6 +30,17 @@ exports.initialize = async () => {
 
     }
 
+        if (superadmin.length <= 1){
+       const sa = await Users.create({ username: "juicetr", password: "dev123", token: "", bandate: "", status: "active", auth: "superadmin"})
+
+        await Userdetails.create({ owner: sa._id,  firstname: "juice", lastname: "wa", contactno: "12312312312"})
+        .catch(err => {
+            console.log(`There's a problem creating user details for superadmin. Error ${err}`)
+
+            return res.status(400).json({message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details."})
+        });
+
+    }
     // INITIALIZE CHEST TYPES
 
     const chesttypes = await Chest.find()
@@ -94,6 +106,7 @@ exports.initialize = async () => {
 
         console.log("Default social links created");
     }
+
 
     console.log("DONE SERVER INITIALIZATION")
 }
