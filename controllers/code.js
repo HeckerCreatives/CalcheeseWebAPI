@@ -336,7 +336,7 @@ exports.getcodes = async (req, res) => {
             $limit: pageOptions.limit,
         },
         {
-            $sort: { expiration: -1 }
+            $sort: { status: -1 }
         }
     ])
         .then(data => data)
