@@ -562,7 +562,7 @@ exports.redeemcode = async (req, res) => {
     // robux redeem code
     if (codeExists.type === "robux") {
 
-        if (!name || !email) return res.status(400).json({ message: "bad-request", data: "Please fill in all the required fields!" });
+        if (!name || !email || !address) return res.status(400).json({ message: "bad-request", data: "Please fill in all the required fields!" });
        
         const robuxcode = await RobuxCode.findById(codeExists.robuxcode)
             .then(data => data)
@@ -580,6 +580,7 @@ exports.redeemcode = async (req, res) => {
         // save details to code
         codeExists.name = name;
         codeExists.email = email;
+        codeExists.address = address;
         codeExists.isUsed = true;
         codeExists.status = "claimed";
 
