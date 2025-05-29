@@ -318,3 +318,41 @@ exports.redeemCodeStatusAnalytics = async (req, res) => {
 
     return res.json({ message: "success", data: finalData });
 };
+
+exports.getregionalAnalytics = async (req, res) => {
+
+    const data = await Code.aggregate([
+    { $match: { isUsed: true } },
+    {
+        $addFields: {
+        city: {
+            $arrayElemAt: [
+            { $split: ["$address", ","] },
+            3 // assuming city is always the 4th part
+            ]
+        }
+        }
+    },
+    { $group: { _id: "$city", count: { $sum: 1 } } },
+    { $sort: { count: -1 } }
+    ])
+    .then(data => data)
+    .catch(err => {
+        console.log(`There's a problem getting the regional analytics data. Error ${err}`);
+        return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+    });
+
+    if (!data || data.length === 0) {
+        return res.status(404).json({ message: "not-found", data: "No regional analytics data found." });
+    }
+
+    // sort alphabetically by city name
+    data.sort((a, b) => a._id.localeCompare(b._id));
+    const finalData = data.map(item => ({
+        city: item._id,
+        count: item.count
+    }));
+
+    return res.json({ message: "success", data: finalData });
+
+}
