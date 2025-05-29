@@ -93,14 +93,14 @@ exports.newgeneratecode = async (req, res) => {
         if (type === "robux") {
             const temprobuxcodes = await RobuxCode.find({ status: "to-generate" }).session(session);
             if (!temprobuxcodes || temprobuxcodes.length === 0) {
-                await session.abortTransaction();
-                session.endSession();
+                // await session.abortTransaction();
+                // session.endSession();
                 return res.status(400).json({ message: "failed", data: "No unclaimed Robux codes available!" });
             }
 
             if (codeamount > temprobuxcodes.length) {
-                await session.abortTransaction();
-                session.endSession();
+                // await session.abortTransaction();
+                // session.endSession();
                 return res.status(400).json({ message: "failed", data: "Requested Robux code quantity exceeds available quantity!" });
             }
 
@@ -109,7 +109,9 @@ exports.newgeneratecode = async (req, res) => {
                 const generatedCode = codes[i];
 
                 tempcode.status = "to-claim";
-                await tempcode.save({ session });
+                await tempcode.save(
+                    // { session }
+                );
 
                 codeData.push({
                     chest: chesttype._id,
