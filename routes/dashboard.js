@@ -7,5 +7,5 @@ router
  .get("/getcardanalytics", protectsuperadmin, getcardanalytics)
  .get("/getredeemcodeanalytics", protectsuperadmin, redeemCodeAnalytics)
  .get("/getredeemcodeanalyticsstatus", protectsuperadmin, redeemCodeStatusAnalytics)
- .get("getregionalanlytics", protectsuperadmin, getregionalAnalytics)
+ .get("/getregionalanlytics", protectsuperadmin, getregionalAnalytics)
 module.exports = router

@@ -321,6 +321,8 @@ exports.redeemCodeStatusAnalytics = async (req, res) => {
 
 exports.getregionalAnalytics = async (req, res) => {
 
+    const { charttype } = req.query;
+
     const data = await Code.aggregate([
     { $match: { isUsed: true } },
     {
@@ -328,7 +330,7 @@ exports.getregionalAnalytics = async (req, res) => {
         city: {
             $arrayElemAt: [
             { $split: ["$address", ","] },
-            3 // assuming city is always the 4th part
+            Number(charttype) // assuming city is always the 4th part
             ]
         }
         }
