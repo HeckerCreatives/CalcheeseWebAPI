@@ -304,7 +304,7 @@ exports.getcodes = async (req, res) => {
         {
             $lookup: {
                 from: "items",
-                localField: "items",
+                localField: "chest.itemid",
                 foreignField: "_id",
                 as: "items",
             },
@@ -785,85 +785,84 @@ exports.approverejectcode = async (req, res) => {
 }
 
 exports.deletecode = async (req, res) => {
-
-    const { id } = req.body;
-    if (!id) return res.status(400).json({ message: "bad-request", data: "Please provide a code!" });
-
-    const code = await Code.findById(id)
-        .then(data => data)
-        .catch(err => {
-            console.log(`There's a problem checking the code. Error ${err}`);
-            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+    const { ids } = req.body; // Expect array of IDs
+    
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ 
+            message: "bad-request", 
+            data: "Please provide at least one code ID!" 
         });
-
-    if (!code) return res.status(400).json({ message: "bad-request", data: "Code does not exist!" });
-
-    if (code.status === "claimed") return res.status(400).json({ message: "bad-request", data: "Code has already been redeemed!" });
-
-    if (code.type === "ticket" && code.ticket) {
-        const ticket = await Ticket.findById(code.ticket)
-            .then(data => data)
-            .catch(err => {
-                console.log(`There's a problem checking the ticket. Error ${err}`);
-                return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
-            });
-
-        if (ticket) {
-            ticket.status = "to-generate";
-            await ticket.save()
-                .catch(err => {
-                    console.log(`There's a problem saving the ticket status. Error ${err}`);
-                    return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
-                });
-        }
-
-    } else if (code.type === "robux" && code.robuxcode) {
-        const robuxcode = await RobuxCode.findById(code.robuxcode)
-            .then(data => data)
-            .catch(err => {
-                console.log(`There's a problem checking the robux code. Error ${err}`);
-                return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
-            });
-        
-        if (robuxcode) {
-            robuxcode.status = "to-generate";
-            await robuxcode.save()
-                .catch(err => {
-                    console.log(`There's a problem saving the robux code status. Error ${err}`);
-                    return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
-                });
-        }
     }
 
-        const checkisexpired = code.expiration < new Date() ? true : false;
+    try {
+        // Find all codes to be deleted
+        const codes = await Code.find({ _id: { $in: ids }});
+        
+        if (codes.length === 0) {
+            return res.status(400).json({
+                message: "bad-request", 
+                data: "No valid codes found!"
+            });
+        }
 
+        let analyticsUpdates = {
+            totalclaimed: 0,
+            totalapproved: 0,
+            totaltogenerate: 0,
+            totaltoclaim: 0,
+            totalexpired: 0
+        };
 
-        await Analytics.findOneAndUpdate({},
-            {
-                $inc: {
-                    totalclaimed: code.isUsed ? -1 : 0,
-                    totalapproved: code.status === "approved" ? -1 : 0,
-                    totaltogenerate: code.status === "to-generate" ? -1 : 0,
-                    totaltoclaim: code.status === "to-claim" ? -1 : 0,
-                    totalexpired: checkisexpired ? 1 : 0,
-                }
-            },
-            { new: true }
-        )
-        .then(data => data)
-        .catch(err => {
-            console.log(`There's a problem updating the analytics. Error ${err}`);
-            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+        // Process each code
+        for (const code of codes) {
+            if (code.status === "claimed") {
+                continue; // Skip claimed codes
+            }
+
+            // Handle ticket type
+            if (code.type === "ticket" && code.ticket) {
+                await Ticket.findByIdAndUpdate(code.ticket, {
+                    status: "to-generate"
+                });
+            }
+            
+            // Handle robux type
+            else if (code.type === "robux" && code.robuxcode) {
+                await RobuxCode.findByIdAndUpdate(code.robuxcode, {
+                    status: "to-generate"
+                });
+            }
+
+            // Update analytics counters
+            const isExpired = code.expiration < new Date();
+            
+            analyticsUpdates.totalclaimed += code.isUsed ? -1 : 0;
+            analyticsUpdates.totalapproved += code.status === "approved" ? -1 : 0;
+            analyticsUpdates.totaltogenerate += code.status === "to-generate" ? -1 : 0;
+            analyticsUpdates.totaltoclaim += code.status === "to-claim" ? -1 : 0;
+            analyticsUpdates.totalexpired += isExpired ? 1 : 0;
+        }
+
+        // Update analytics in one operation
+        await Analytics.findOneAndUpdate({}, {
+            $inc: analyticsUpdates
         });
 
-    await Code.findByIdAndDelete(id)
-        .then(data => data)
-        .catch(err => {
-            console.log(`There's a problem deleting the code. Error ${err}`);
-            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+        // Delete all codes in one operation
+        await Code.deleteMany({ _id: { $in: ids }});
+
+        return res.json({ 
+            message: "success",
+            deletedCount: codes.length
         });
 
-    return res.json({ message: "success" })
+    } catch (err) {
+        console.log(`Error deleting codes: ${err}`);
+        return res.status(500).json({
+            message: "server-error",
+            data: "There was a problem deleting the codes. Please try again or contact support."
+        });
+    }
 }
 
 
