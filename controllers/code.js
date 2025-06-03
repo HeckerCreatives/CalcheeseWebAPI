@@ -361,6 +361,7 @@ exports.getcodes = async (req, res) => {
                 id: item._id,
                 itemid: item.itemid,
                 itemname: item.itemname,
+                quantity: item?.quantity || 0,
             })),
             expiration: moment(code.expiration).format("YYYY-MM-DD"),
             type: code.type,
