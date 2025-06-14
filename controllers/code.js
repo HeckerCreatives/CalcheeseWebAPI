@@ -8,7 +8,7 @@ const { default: mongoose } = require("mongoose");
 const { io } = require('../app');
 const fs = require('fs');
 const path = require('path');
-const { generateRandomString } = require("../utils/codegenerator");
+const { generateRandomString, getNextCode } = require("../utils/codegenerator");
 const createCsvWriter = require('csv-writer').createObjectCsvWriter;
 const archiver = require('archiver');
 const { Analytics, RedeemedCodeAnalytics } = require("../models/Analytics");
@@ -51,26 +51,38 @@ exports.newgeneratecode = async (req, res) => {
         }
 
         const codes = [];
-        const prefix = type === "robux" ? "RBX" : 
-                    type === "ticket" ? "TKT" : 
-                    type === "ingame" ? "IGM" : "";
+        let codeLength = 9;
+        
+        if (type === "robux" || type === "ticket") {
+            codeLength = 7;
+        }
+
+        // Get the last code from DB to continue sequence
+        const lastCodeDoc = await Code.findOne({})
+            .sort({createdAt: -1})
+            .select('code')
+            .lean();
+
+        // Remove hyphens from last code if exists
+        let lastCode = lastCodeDoc ? lastCodeDoc.code.replace(/-/g, '') : null;
+        let currentCode = lastCode;
 
         for (let i = 0; i < codeamount; i++) {
-            const randomChars = generateRandomString(12); // Always 10 chars
-            const part1 = randomChars.substring(0, 4);
-            const part2 = randomChars.substring(4, 8);
-            const part3 = randomChars.substring(8, 12);
-            const code = `${prefix}-${part1}-${part2}-${part3}`;
-            codes.push(code);
+            // Get next code in sequence
+            currentCode = getNextCode(currentCode, codeLength);
+            
+            // Format with hyphens
+            const formatted = `${currentCode.slice(0,3)}-${currentCode.slice(3,6)}-${currentCode.slice(6)}`;
+            codes.push(formatted);
 
             if (i % Math.max(1, Math.floor(codeamount / 10)) === 0) {
-                const percentage = Math.round((i / codeamount) * 30) + 10; // 10-40% progress
-                if (socketid) {
-                    io.to(socketid).emit('generate-progress', { 
-                        percentage,
-                        status: `Generating code patterns... ${i}/${codeamount}`
-                    });
-                }
+            const percentage = Math.round((i / codeamount) * 30) + 10;
+            if (socketid) {
+                io.to(socketid).emit('generate-progress', { 
+                percentage,
+                status: `Generating code patterns... ${i}/${codeamount}`
+                });
+            }
             }
         }
 
