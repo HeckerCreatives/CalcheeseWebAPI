@@ -2,11 +2,6 @@ const mongoose = require('mongoose');
 
 const CodeSchema = new mongoose.Schema(
     {
-        chest: {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: 'Chest',
-            index: true
-        },
         expiration: {
             type: Date,
             index: true // Automatically creates an index on 'amount'
@@ -28,7 +23,7 @@ const CodeSchema = new mongoose.Schema(
         },
         type: {
             type: String,
-            enum: ['robux', 'ticket', 'ingame'],
+            enum: ['robux', 'ticket', 'ingame', 'exclusive', 'chest'],
             index: true // Automatically creates an index on 'amount'
         },
         status: {

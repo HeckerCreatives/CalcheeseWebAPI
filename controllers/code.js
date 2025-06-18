@@ -1,5 +1,4 @@
 const moment = require("moment");
-const Chest = require("../models/Chest")
 const Code = require("../models/Code");
 const Item = require("../models/Item");
 const RobuxCode = require("../models/Robuxcode");
@@ -14,9 +13,9 @@ const archiver = require('archiver');
 const { Analytics, RedeemedCodeAnalytics } = require("../models/Analytics");
 
 exports.newgeneratecode = async (req, res) => {
-    const { socketid, chest, expiration, codeamount, items, type } = req.body;
+    const { socketid, expiration, codeamount, items, type } = req.body;
 
-    if (!chest || !expiration || !codeamount || !items) {
+    if (!expiration || !codeamount || !items) {
         return res.status(400).json({ message: "failed", data: "Please fill in all the required fields!" });
     }
 
@@ -36,13 +35,7 @@ exports.newgeneratecode = async (req, res) => {
     // session.startTransaction();
 
     try {
-        const chesttype = await Chest.findById(chest)
-        // .session(session);
-        if (!chesttype) {
-            // await session.abortTransaction();
-            // session.endSession();
-            return res.status(400).json({ message: "failed", data: "Invalid chest type!" });
-        }
+
         if (socketid) {
             io.to(socketid).emit('generate-progress', { 
                 percentage: 10,
@@ -155,7 +148,6 @@ exports.newgeneratecode = async (req, res) => {
                 );
 
                 codeData.push({
-                    chest: chesttype._id,
                     expiration: expiration,
                     code: generatedCode,
                     items: items,
@@ -197,7 +189,6 @@ exports.newgeneratecode = async (req, res) => {
                 await ticketDoc.save();
 
                 codeData.push({
-                    chest: chesttype._id,
                     expiration: expiration,
                     code: generatedCode,
                     items: items,
@@ -216,7 +207,7 @@ exports.newgeneratecode = async (req, res) => {
                     }
                 }
             }
-        } else if (type === "ingame") {
+        } else if (type === "ingame" || type === "exclusive" || type === "chest") {
             const BATCH_SIZE = 100000;
             let index = lastCode || 1;
                 for (let batchStart = 0; batchStart < codeamount; batchStart += BATCH_SIZE) {
@@ -224,7 +215,6 @@ exports.newgeneratecode = async (req, res) => {
                     let codeData = [];
                     for (let i = batchStart; i < batchEnd; i++) {
                         codeData.push({
-                            chest: chesttype._id,
                             expiration: expiration,
                             code: codes[i],
                             items: items,
@@ -302,7 +292,7 @@ exports.newgeneratecode = async (req, res) => {
 
 exports.getcodes = async (req, res) => {
 
-    const { page, limit, type, item, chest, status, search } = req.query;
+    const { page, limit, type, item, status, search } = req.query;
     const pageOptions = {
         page: parseInt(page) || 0,
         limit: parseInt(limit) || 10,
@@ -311,7 +301,6 @@ exports.getcodes = async (req, res) => {
     const filter = {};
     if (type) filter.type = type;
     if (item) filter.items = { $in: [new mongoose.Types.ObjectId(item)] };
-    if (chest) filter.chest = new mongoose.Types.ObjectId(chest);
     if (status && ['to-generate', "to-claim", 'claimed', "approved", "expired", null].includes(status.toLowerCase())) {
         if (status.toLowerCase() === "expired") {
             filter.expiration = { $lte: new Date() };
@@ -323,7 +312,6 @@ exports.getcodes = async (req, res) => {
         const searchRegex = new RegExp(search, 'i'); // Case-insensitive search
         filter.$or = [
             { code: searchRegex },
-            // { "chest.chestname": searchRegex },
             // { "items.itemname": searchRegex },
             { "robuxcode.robuxcode": searchRegex },
             { "ticket.ticketid": searchRegex }
@@ -346,19 +334,8 @@ exports.getcodes = async (req, res) => {
         },
         {
             $lookup: {
-                from: "chests",
-                localField: "chest",
-                foreignField: "_id",
-                as: "chest",
-            },
-        },
-        {
-            $unwind: "$chest",
-        },
-        {
-            $lookup: {
                 from: "items",
-                localField: "chest.itemid",
+                localField: "items",
                 foreignField: "_id",
                 as: "items",
             },
@@ -406,11 +383,6 @@ exports.getcodes = async (req, res) => {
             id: code._id,
             code: code.code,
             status: code.status,
-            chest: {
-                id: code.chest._id,
-                chestid: code.chest.chestid,
-                chestname: code.chest.chestname,
-            },
              items: code.items.map(item => ({
                 id: item._id,
                 itemid: item.itemid,
@@ -543,7 +515,6 @@ exports.checkcode = async (req, res) => {
 
   try {
     const codeExists = await Code.findOne({ code })
-      .populate('chest')              // Populate chest reference
       .populate('items');             // Populate code's item references
 
     if (!codeExists)
@@ -576,14 +547,10 @@ exports.checkcode = async (req, res) => {
         data: "Code is not available!",
       });
 
-    // Populate itemid inside the chest
-    const populatedChest = await Chest.findById(codeExists.chest._id).populate('itemid');
-
     return res.json({
       message: "success",
       data: {
         ...codeExists.toObject(),
-        chest: populatedChest, // Now contains populated itemid
       },
     });
 
@@ -924,14 +891,13 @@ exports.deletecode = async (req, res) => {
 exports.exportCodesCSV = async (req, res) => {
 
         try {
-        const { type, item, chest, status, dateRange, start, end } = req.query;
+        const { type, item, status, dateRange, start, end } = req.query;
         const CHUNK_SIZE = parseInt(end) || 1000000; // Default 1 million per file
 
         // Build filter
         const filter = {};
         if (type) filter.type = type;
         if (item) filter.items = { $in: [new mongoose.Types.ObjectId(item)] };
-        if (chest) filter.chest = new mongoose.Types.ObjectId(chest);
         if (status && ['to-generate', "to-claim", 'claimed', "approved", "rejected"].includes(status.toLowerCase())) {
             filter.status = status;
         }
@@ -1035,7 +1001,7 @@ exports.exportCodesCSV = async (req, res) => {
 
 exports.editmultiplecodes = async (req, res) => {
 
-    const { ids, type, chest, items, expiration, status } = req.body;
+    const { ids, type, items, expiration, status } = req.body;
     if (!ids || !Array.isArray(ids) || ids.length === 0) {
         return res.status(400).json({ 
             message: "bad-request", 
@@ -1046,7 +1012,6 @@ exports.editmultiplecodes = async (req, res) => {
     const updatedata = {}
 
     if (type) updatedata.type = type;
-    if (chest) updatedata.chest = new mongoose.Types.ObjectId(chest);
     if (items && Array.isArray(items) && items.length > 0) {
         updatedata.items = items.map(item => new mongoose.Types.ObjectId(item));
     }

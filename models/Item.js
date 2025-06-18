@@ -10,6 +10,10 @@ const ItemSchema = new mongoose.Schema(
             type: String,
             index: true // Automatically creates an index on 'amount'
         },
+        category: {
+            type: String,
+            enum: ['exclusive', 'roblux', 'ticket', 'ingame', 'chest'],
+        },
         quantity: {
             type: Number,
             default: 0,

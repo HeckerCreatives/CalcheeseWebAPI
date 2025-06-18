@@ -2,13 +2,15 @@ const Item = require("../models/Item");
 const moment = require("moment");
 
 exports.createItem = async (req, res) => {
-    const { itemid, itemname, quantity } = req.body;
+    const { itemid, itemname, quantity, category } = req.body;
 
     if (!itemid) return res.status(400).json({ message: "bad-request", data: "Please provide an item id!" });
     if (!itemname) return res.status(400).json({ message: "bad-request", data: "Please provide an item name!" });
     if (quantity && typeof quantity !== "number") return res.status(400).json({ message: "bad-request", data: "Quantity must be a number!" });
     if (quantity && quantity < 0) return res.status(400).json({ message: "bad-request", data: "Quantity cannot be negative!" });
-
+    if (category && !["exclusive", "roblux", "ticket", "ingame", "chest"].includes(category)) {
+        return res.status(400).json({ message: "bad-request", data: "Invalid category! Must be one of: exclusive, roblux, ticket, ingame, chest." });
+    }
     const itemExists = await Item.findOne({ itemid })
         .then(data => data)
         .catch(err => {
@@ -18,7 +20,7 @@ exports.createItem = async (req, res) => {
 
     if (itemExists) return res.status(400).json({ message: "bad-request", data: "Item already exists!" });
 
-    await Item.create({ itemid, itemname, quantity })
+    await Item.create({ itemid, itemname, quantity, category })
         .then(data => data)
         .catch(err => {
             console.log(`There's a problem creating the item. Error ${err}`);
@@ -29,15 +31,20 @@ exports.createItem = async (req, res) => {
 };
 
 exports.getItems = async (req, res) => {
-    const { page, limit } = req.query;
+    const { page, limit, category } = req.query;
 
     const pageOptions = {
         page: parseInt(page) || 0,
         limit: parseInt(limit) || 10,
     };
 
+    const filter = {};
+    if (category && ["exclusive", "roblux", "ticket", "ingame", "chest"].includes(category)) {
+        filter.category = category;
+    }
 
-    const totalDocs = await Item.countDocuments()
+
+    const totalDocs = await Item.countDocuments(filter)
         .then(data => data)
         .catch(err => {
             console.log(`There's a problem getting the items. Error ${err}`);
@@ -45,7 +52,7 @@ exports.getItems = async (req, res) => {
         });
 
     const totalPages = Math.ceil(totalDocs / pageOptions.limit);
-    const items = await Item.find()
+    const items = await Item.find(filter)
         .skip(pageOptions.page * pageOptions.limit)
         .limit(pageOptions.limit)
         .then(data => data)
@@ -56,6 +63,7 @@ exports.getItems = async (req, res) => {
 
     const finalData = items.map(item => ({
         id: item._id,
+        category: item.category,
         itemid: item.itemid,
         itemname: item.itemname,
         quantity: item.quantity,
@@ -70,7 +78,7 @@ exports.getItems = async (req, res) => {
 };
 
 exports.editItem = async (req, res) => {
-    const { id, itemid, itemname, quantity } = req.body;
+    const { id, itemid, itemname, quantity, category } = req.body;
 
     if (!id) return res.status(400).json({ message: "bad-request", data: "Please provide an ID!" });
 
@@ -83,7 +91,12 @@ exports.editItem = async (req, res) => {
         if (quantity < 0) return res.status(400).json({ message: "bad-request", data: "Quantity cannot be negative!" });
         updateData.quantity = quantity;
     }
-
+    if (category) {
+        if (!["exclusive", "roblux", "ticket", "ingame", "chest"].includes(category)) {
+            return res.status(400).json({ message: "bad-request", data: "Invalid category! Must be one of: exclusive, roblux, ticket, ingame, chest." });
+        }
+        updateData.category = category;
+    }
     if (Object.keys(updateData).length === 0) return res.status(400).json({ message: "bad-request", data: "Please provide at least one field to update!" });
 
     const itemExists = await Item.findById(id)
