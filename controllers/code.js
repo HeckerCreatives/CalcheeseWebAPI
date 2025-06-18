@@ -47,14 +47,12 @@ exports.newgeneratecode = async (req, res) => {
 
         // Get the last code from DB to continue sequence
 
-        const totalCodes = await Code.countDocuments({ length: length || 9 })
+        const totalCodes = await Code.countDocuments({})
 
 
         // Remove hyphens from last code if exists
         let lastCode = (totalCodes || 0) + 1;
         let currentCode = lastCode;
-
-        console.log(`Generating codes starting from: ${lastCode}`);
 
 
         for (let i = 0; i < codeamount; i++) {
