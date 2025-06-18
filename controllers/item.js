@@ -7,7 +7,7 @@ exports.createItem = async (req, res) => {
     if (!itemname) return res.status(400).json({ message: "bad-request", data: "Please provide an item name!" });
     if (quantity && typeof quantity !== "number") return res.status(400).json({ message: "bad-request", data: "Quantity must be a number!" });
     if (quantity && quantity < 0) return res.status(400).json({ message: "bad-request", data: "Quantity cannot be negative!" });
-    if (category && !["exclusive", "roblux", "ticket", "ingame", "chest"].includes(category)) {
+    if (category && !["exclusive", "robux", "ticket", "ingame", "chest"].includes(category)) {
         return res.status(400).json({ message: "bad-request", data: "Invalid category! Must be one of: exclusive, roblux, ticket, ingame, chest." });
     }
 
@@ -30,7 +30,7 @@ exports.getItems = async (req, res) => {
     };
 
     const filter = {};
-    if (category && ["exclusive", "roblux", "ticket", "ingame", "chest"].includes(category)) {
+    if (category && ["exclusive", "robux", "ticket", "ingame", "chest"].includes(category)) {
         filter.category = category;
     }
 
