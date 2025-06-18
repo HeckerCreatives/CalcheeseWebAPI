@@ -46,14 +46,13 @@ exports.newgeneratecode = async (req, res) => {
         const codes = [];
 
         // Get the last code from DB to continue sequence
-        const totalCodes = await Code.countDocuments()
+        const totalCodes = await Code.countDocuments({ length: length || 9 })
 
 
         // Remove hyphens from last code if exists
         let lastCode = totalCodes || 0;
         let currentCode = lastCode;
 
-        console.log(`Generating codes starting from: ${lastCode}, total codes to generate: ${codeamount}`);
 
         for (let i = 0; i < codeamount; i++) {
             // Get next code in sequence
@@ -149,6 +148,8 @@ exports.newgeneratecode = async (req, res) => {
                     robuxcode: tempcode._id,
                     type: "robux",
                     isUsed: false,
+                    index: lastCode + i + 1, // Store index for reference
+                    length: length || 9, // Store code length
                 });
 
                 if (i % Math.max(1, Math.floor(codeamount / 10)) === 0) {
@@ -190,6 +191,8 @@ exports.newgeneratecode = async (req, res) => {
                     ticket: ticketDoc._id,
                     type: "ticket",
                     isUsed: false,
+                    index: lastCode + i + 1, // Store index for reference
+                    length: length || 9, // Store code length
                 });
 
                 if (i % Math.max(1, Math.floor(codeamount / 10)) === 0) {
@@ -204,7 +207,7 @@ exports.newgeneratecode = async (req, res) => {
             }
         } else if (type === "ingame" || type === "exclusive" || type === "chest") {
             const BATCH_SIZE = 100000;
-            let index = lastCode || 1;
+            let index = (lastCode || 0) + 1;
                 for (let batchStart = 0; batchStart < codeamount; batchStart += BATCH_SIZE) {
                     const batchEnd = Math.min(batchStart + BATCH_SIZE, codeamount);
                     let codeData = [];
@@ -215,7 +218,8 @@ exports.newgeneratecode = async (req, res) => {
                             items: items,
                             type: type,
                             isUsed: false,
-                            index: index, 
+                            index: index,
+                            length: length || 9, // Store code length 
                         });
                         index++;
                     }

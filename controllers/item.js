@@ -61,7 +61,7 @@ exports.getItems = async (req, res) => {
     const finalData = items.map(item => ({
         id: item._id,
         category: item.category,
-        rarity: item.rarity,
+        rarity: item.rarity || "none",
         itemname: item.itemname,
         quantity: item.quantity,
         createdAt: moment(item.createdAt).format("YYYY-MM-DD"),
@@ -99,7 +99,7 @@ exports.editItem = async (req, res) => {
         }
         updateData.rarity = rarity;
     }
-    
+
     if (Object.keys(updateData).length === 0) return res.status(400).json({ message: "bad-request", data: "Please provide at least one field to update!" });
 
     const itemExists = await Item.findById(id)
