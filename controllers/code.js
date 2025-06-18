@@ -54,7 +54,7 @@ exports.newgeneratecode = async (req, res) => {
         let currentCode = lastCode;
 
 
-        for (let i = 0; i < codeamount; i++) {
+        for (let i = 1; i < codeamount; i++) {
             // Get next code in sequence
             currentCode = getNextCode(lastCode + i, length || 9);
             
