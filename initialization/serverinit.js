@@ -121,5 +121,7 @@ exports.initialize = async () => {
                     await newAnalytics.save();
                 } 
 
+                
+
     console.log("DONE SERVER INITIALIZATION")
 }

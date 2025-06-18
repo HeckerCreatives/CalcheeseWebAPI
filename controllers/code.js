@@ -58,22 +58,19 @@ exports.newgeneratecode = async (req, res) => {
         }
 
         // Get the last code from DB to continue sequence
-        const lastCodeDoc = await Code.findOne({})
-            .sort({createdAt: -1})
-            .select('code')
-            .lean();
+        const totalCodes = await Code.countDocuments()
+
 
         // Remove hyphens from last code if exists
-        let lastCode = lastCodeDoc ? lastCodeDoc.code.replace(/-/g, '') : null;
+        let lastCode = totalCodes || 0;
         let currentCode = lastCode;
 
         for (let i = 0; i < codeamount; i++) {
             // Get next code in sequence
-            currentCode = getNextCode(currentCode, codeLength);
+            currentCode = getNextCode(lastCode + i, codeLength);
             
             // Format with hyphens
-            const formatted = `${currentCode.slice(0,3)}-${currentCode.slice(3,6)}-${currentCode.slice(6)}`;
-            codes.push(formatted);
+            codes.push(currentCode);
 
             if (i % Math.max(1, Math.floor(codeamount / 10)) === 0) {
             const percentage = Math.round((i / codeamount) * 30) + 10;
@@ -101,7 +98,37 @@ exports.newgeneratecode = async (req, res) => {
             });
         }
 
+        // // Check for duplicate codes if there are existing codes remove it from the generated codes
+       
+        // console.time('Checking for duplicate codes');
+        // const BATCH_SIZE = 250000;
+        // for (let i = 0; i < codes.length; i += BATCH_SIZE) {
+        //     const batch = codes.slice(i, i + BATCH_SIZE);
+        //     const existingCodes = await Code.find({ 
+        //       code: { $in: batch }
+        //     }).select('code').lean();
 
+        //     if (socketid) {
+        //     io.to(socketid).emit('generate-progress', {
+        //         percentage: Math.round((i / codes.length) * 20) + 20, // 20-40% progress
+        //         status: `Checking for duplicate codes... ${Math.min(i + BATCH_SIZE, codeamount).toLocaleString()}/${codeamount.toLocaleString()}`
+        //     });
+        //     }
+
+        //     if (existingCodes.length > 0) {
+        //     const existingCodeSet = new Set(existingCodes.map(code => code.code));
+        //     for (let j = 0; j < batch.length; j++) {
+        //         if (existingCodeSet.has(batch[j])) {
+        //         codes[i + j] = getNextCode(currentCode++, 9);
+        //         }
+        //     }
+        //     }
+        // }
+        // console.timeEnd('Checking for duplicate codes');
+
+
+
+        console.time('Code Processing Time');
         if (type === "robux") {
             const temprobuxcodes = await RobuxCode.find({ status: "to-generate" }).session(session);
             if (!temprobuxcodes || temprobuxcodes.length === 0) {
@@ -229,7 +256,7 @@ exports.newgeneratecode = async (req, res) => {
         }
         
         await Code.insertMany(codeData);
-        
+        console.timeEnd('Code Processing Time');
         if (socketid) {
             io.to(socketid).emit('generate-progress', { 
                 percentage: 95,
@@ -270,7 +297,7 @@ exports.newgeneratecode = async (req, res) => {
 
 exports.getcodes = async (req, res) => {
 
-    const { page, limit, type, item, chest, status } = req.query;
+    const { page, limit, type, item, chest, status, search } = req.query;
     const pageOptions = {
         page: parseInt(page) || 0,
         limit: parseInt(limit) || 10,
@@ -286,6 +313,16 @@ exports.getcodes = async (req, res) => {
         } else {
             filter.status = status;
         }
+    }
+    if (search) {
+        const searchRegex = new RegExp(search, 'i'); // Case-insensitive search
+        filter.$or = [
+            { code: searchRegex },
+            // { "chest.chestname": searchRegex },
+            // { "items.itemname": searchRegex },
+            { "robuxcode.robuxcode": searchRegex },
+            { "ticket.ticketid": searchRegex }
+        ];
     }
 
 
@@ -350,7 +387,7 @@ exports.getcodes = async (req, res) => {
             $limit: pageOptions.limit,
         },
         {
-            $sort: { status: -1 }
+            $sort: { createdAt: -1 }
         }
     ])
         .then(data => data)
@@ -883,7 +920,7 @@ exports.exportCodesCSV = async (req, res) => {
 
         try {
         const { type, item, chest, status, dateRange, start, end } = req.query;
-        const CHUNK_SIZE = parseInt(end) || 5000000; // Default 1 million per file
+        const CHUNK_SIZE = parseInt(end) || 1000000; // Default 1 million per file
 
         // Build filter
         const filter = {};
@@ -922,9 +959,9 @@ exports.exportCodesCSV = async (req, res) => {
         const headers = [
             { id: 'code', title: 'Code' },
         ];
-        
+        let batch = 0
         let fileList = [];
-        for (let skip = 0, fileNum = 1; skip < totalDocs; skip += CHUNK_SIZE, fileNum++) {
+        for (let skip = 0, fileNum = 1; skip < 3000000; skip += CHUNK_SIZE, fileNum++) {
             const codes = await Code.find(filter)
                 .select('code')
                 .sort({ createdAt: -1 })
@@ -948,6 +985,9 @@ exports.exportCodesCSV = async (req, res) => {
             await csvWriter.writeRecords(csvData);
             
             fileList.push(filename);
+
+            console.log(`batch ${batch}`)
+            batch++;
         }
 
 

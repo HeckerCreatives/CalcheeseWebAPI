@@ -310,10 +310,20 @@ exports.getpromocodesections = async (req, res) => {
     await PromoCodeSection.find()
         .skip(pageOptions.page * pageOptions.limit)
         .limit(pageOptions.limit)
-        .then(data => {
+        .then(async data => {
             const totaldocuments = data.length;
             const totalpages = Math.ceil(totaldocuments / pageOptions.limit);
 
+            const rewardItem = [
+              {title:'In-Game Rewards', description:' Lorem ipsum dolor sit amet consectetur, adipisicing elit'},
+              {title:'Ticket', description:' Lorem ipsum dolor sit amet consectetur, adipisicing elit'},
+              {title:'Robux', description:' Lorem ipsum dolor sit amet consectetur, adipisicing elit'},
+              {title:'Title', description:' Lorem ipsum dolor sit amet consectetur, adipisicing elit'},
+            ]
+
+            if (data.length === 0) {
+              data = await PromoCodeSection.insertMany(rewardItem)
+            }
             const finalData = data.map(item => ({
                 id: item._id,
                 title: item.title,
