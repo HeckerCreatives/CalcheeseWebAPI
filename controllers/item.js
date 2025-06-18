@@ -14,7 +14,7 @@ exports.createItem = async (req, res) => {
         return res.status(400).json({ message: "bad-request", data: "Invalid rarity! Must be one of: common, uncommon, rare, epic, legendary." });
     }
 
-    await Item.create({ itemname, quantity, category })
+    await Item.create({ itemname, quantity, category, rarity })
         .then(data => data)
         .catch(err => {
             console.log(`There's a problem creating the item. Error ${err}`);
