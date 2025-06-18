@@ -13,7 +13,7 @@ const archiver = require('archiver');
 const { Analytics, RedeemedCodeAnalytics } = require("../models/Analytics");
 
 exports.newgeneratecode = async (req, res) => {
-    const { socketid, expiration, codeamount, items, type } = req.body;
+    const { socketid, expiration, codeamount, items, type, length } = req.body;
 
     if (!expiration || !codeamount || !items) {
         return res.status(400).json({ message: "failed", data: "Please fill in all the required fields!" });
@@ -44,11 +44,6 @@ exports.newgeneratecode = async (req, res) => {
         }
 
         const codes = [];
-        let codeLength = 9;
-        
-        if (type === "robux" || type === "ticket") {
-            codeLength = 7;
-        }
 
         // Get the last code from DB to continue sequence
         const totalCodes = await Code.countDocuments()
@@ -62,7 +57,7 @@ exports.newgeneratecode = async (req, res) => {
 
         for (let i = 0; i < codeamount; i++) {
             // Get next code in sequence
-            currentCode = getNextCode(lastCode + i, codeLength);
+            currentCode = getNextCode(lastCode + i, length || 9);
             
             // Format with hyphens
             codes.push(currentCode);
