@@ -10,14 +10,6 @@ exports.createItem = async (req, res) => {
     if (category && !["exclusive", "roblux", "ticket", "ingame", "chest"].includes(category)) {
         return res.status(400).json({ message: "bad-request", data: "Invalid category! Must be one of: exclusive, roblux, ticket, ingame, chest." });
     }
-    const itemExists = await Item.findOne({ itemid })
-        .then(data => data)
-        .catch(err => {
-            console.log(`There's a problem checking the item data. Error ${err}`);
-            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
-        });
-
-    if (itemExists) return res.status(400).json({ message: "bad-request", data: "Item already exists!" });
 
     await Item.create({ itemid, itemname, quantity, category })
         .then(data => data)
