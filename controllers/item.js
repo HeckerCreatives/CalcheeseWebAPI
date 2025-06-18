@@ -2,13 +2,16 @@ const Item = require("../models/Item");
 const moment = require("moment");
 
 exports.createItem = async (req, res) => {
-    const { itemname, quantity, category } = req.body;
+    const { itemname, quantity, category, rarity } = req.body;
 
     if (!itemname) return res.status(400).json({ message: "bad-request", data: "Please provide an item name!" });
     if (quantity && typeof quantity !== "number") return res.status(400).json({ message: "bad-request", data: "Quantity must be a number!" });
     if (quantity && quantity < 0) return res.status(400).json({ message: "bad-request", data: "Quantity cannot be negative!" });
     if (category && !["exclusive", "robux", "ticket", "ingame", "chest"].includes(category)) {
         return res.status(400).json({ message: "bad-request", data: "Invalid category! Must be one of: exclusive, roblux, ticket, ingame, chest." });
+    }
+    if (rarity && !["common", "uncommon", "rare", "epic", "legendary"].includes(rarity)) {
+        return res.status(400).json({ message: "bad-request", data: "Invalid rarity! Must be one of: common, uncommon, rare, epic, legendary." });
     }
 
     await Item.create({ itemname, quantity, category })
@@ -22,7 +25,7 @@ exports.createItem = async (req, res) => {
 };
 
 exports.getItems = async (req, res) => {
-    const { page, limit, category } = req.query;
+    const { page, limit, category, rarity } = req.query;
 
     const pageOptions = {
         page: parseInt(page) || 0,
@@ -32,6 +35,9 @@ exports.getItems = async (req, res) => {
     const filter = {};
     if (category && ["exclusive", "robux", "ticket", "ingame", "chest"].includes(category)) {
         filter.category = category;
+    }
+    if (rarity && ["common", "uncommon", "rare", "epic", "legendary"].includes(rarity)) {
+        filter.rarity = rarity;
     }
 
 
@@ -55,6 +61,7 @@ exports.getItems = async (req, res) => {
     const finalData = items.map(item => ({
         id: item._id,
         category: item.category,
+        rarity: item.rarity,
         itemname: item.itemname,
         quantity: item.quantity,
         createdAt: moment(item.createdAt).format("YYYY-MM-DD"),
@@ -68,7 +75,7 @@ exports.getItems = async (req, res) => {
 };
 
 exports.editItem = async (req, res) => {
-    const { id, itemname, quantity, category } = req.body;
+    const { id, itemname, quantity, category, rarity } = req.body;
 
     if (!id) return res.status(400).json({ message: "bad-request", data: "Please provide an ID!" });
 
@@ -86,6 +93,13 @@ exports.editItem = async (req, res) => {
         }
         updateData.category = category;
     }
+    if (rarity) {
+        if (!["common", "uncommon", "rare", "epic", "legendary"].includes(rarity)) {
+            return res.status(400).json({ message: "bad-request", data: "Invalid rarity! Must be one of: common, uncommon, rare, epic, legendary." });
+        }
+        updateData.rarity = rarity;
+    }
+    
     if (Object.keys(updateData).length === 0) return res.status(400).json({ message: "bad-request", data: "Please provide at least one field to update!" });
 
     const itemExists = await Item.findById(id)

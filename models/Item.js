@@ -6,6 +6,10 @@ const ItemSchema = new mongoose.Schema(
             type: String,
             index: true // Automatically creates an index on 'amount'
         },
+        rarity: {
+            type: String,
+            index: true // Automatically creates an index on 'amount'
+        },
         category: {
             type: String,
             enum: ['exclusive', 'robux', 'ticket', 'ingame', 'chest'],
