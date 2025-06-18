@@ -11,7 +11,7 @@ exports.createItem = async (req, res) => {
         return res.status(400).json({ message: "bad-request", data: "Invalid category! Must be one of: exclusive, roblux, ticket, ingame, chest." });
     }
 
-    await Item.create({ itemid, itemname, quantity, category })
+    await Item.create({ itemname, quantity, category })
         .then(data => data)
         .catch(err => {
             console.log(`There's a problem creating the item. Error ${err}`);
@@ -55,7 +55,6 @@ exports.getItems = async (req, res) => {
     const finalData = items.map(item => ({
         id: item._id,
         category: item.category,
-        itemid: item.itemid,
         itemname: item.itemname,
         quantity: item.quantity,
         createdAt: moment(item.createdAt).format("YYYY-MM-DD"),
@@ -69,14 +68,13 @@ exports.getItems = async (req, res) => {
 };
 
 exports.editItem = async (req, res) => {
-    const { id, itemid, itemname, quantity, category } = req.body;
+    const { id, itemname, quantity, category } = req.body;
 
     if (!id) return res.status(400).json({ message: "bad-request", data: "Please provide an ID!" });
 
     const updateData = {};
 
     if (itemname) updateData.itemname = itemname;
-    if (itemid) updateData.itemid = itemid;
     if (quantity) {
         if (typeof quantity !== "number") return res.status(400).json({ message: "bad-request", data: "Quantity must be a number!" });
         if (quantity < 0) return res.status(400).json({ message: "bad-request", data: "Quantity cannot be negative!" });
