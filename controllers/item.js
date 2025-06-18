@@ -2,9 +2,8 @@ const Item = require("../models/Item");
 const moment = require("moment");
 
 exports.createItem = async (req, res) => {
-    const { itemid, itemname, quantity, category } = req.body;
+    const { itemname, quantity, category } = req.body;
 
-    if (!itemid) return res.status(400).json({ message: "bad-request", data: "Please provide an item id!" });
     if (!itemname) return res.status(400).json({ message: "bad-request", data: "Please provide an item name!" });
     if (quantity && typeof quantity !== "number") return res.status(400).json({ message: "bad-request", data: "Quantity must be a number!" });
     if (quantity && quantity < 0) return res.status(400).json({ message: "bad-request", data: "Quantity cannot be negative!" });
