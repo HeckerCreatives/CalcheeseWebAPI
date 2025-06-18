@@ -68,6 +68,10 @@ const CodeSchema = new mongoose.Schema(
             type: String,
             index: true // Automatically creates an index on 'amount'
         },
+        index: {
+            type: Number,
+            index: true // Automatically creates an index on 'amount'
+        }
     },
     {
         timestamps: true

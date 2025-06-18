@@ -65,6 +65,8 @@ exports.newgeneratecode = async (req, res) => {
         let lastCode = totalCodes || 0;
         let currentCode = lastCode;
 
+        console.log(`Generating codes starting from: ${lastCode}, total codes to generate: ${codeamount}`);
+
         for (let i = 0; i < codeamount; i++) {
             // Get next code in sequence
             currentCode = getNextCode(lastCode + i, codeLength);
@@ -216,6 +218,7 @@ exports.newgeneratecode = async (req, res) => {
             }
         } else if (type === "ingame") {
             const BATCH_SIZE = 100000;
+            let index = lastCode || 1;
                 for (let batchStart = 0; batchStart < codeamount; batchStart += BATCH_SIZE) {
                     const batchEnd = Math.min(batchStart + BATCH_SIZE, codeamount);
                     let codeData = [];
@@ -227,7 +230,9 @@ exports.newgeneratecode = async (req, res) => {
                             items: items,
                             type: type,
                             isUsed: false,
+                            index: index, 
                         });
+                        index++;
                     }
                     await Code.insertMany(codeData);
 
@@ -961,7 +966,7 @@ exports.exportCodesCSV = async (req, res) => {
         ];
         let batch = 0
         let fileList = [];
-        for (let skip = 0, fileNum = 1; skip < 3000000; skip += CHUNK_SIZE, fileNum++) {
+        for (let skip = 0, fileNum = 1; skip < 5000000; skip += CHUNK_SIZE, fileNum++) {
             const codes = await Code.find(filter)
                 .select('code')
                 .sort({ createdAt: -1 })
@@ -1026,3 +1031,101 @@ exports.exportCodesCSV = async (req, res) => {
         });
     }
 };
+
+
+exports.editmultiplecodes = async (req, res) => {
+
+    const { ids, type, chest, items, expiration, status } = req.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ 
+            message: "bad-request", 
+            data: "Please provide at least one code ID!" 
+        });
+    }
+
+    const updatedata = {}
+
+    if (type) updatedata.type = type;
+    if (chest) updatedata.chest = new mongoose.Types.ObjectId(chest);
+    if (items && Array.isArray(items) && items.length > 0) {
+        updatedata.items = items.map(item => new mongoose.Types.ObjectId(item));
+    }
+    if (expiration) updatedata.expiration = new Date(expiration);
+    if (status && ['to-generate', "to-claim", 'claimed', "approved", "rejected"].includes(status.toLowerCase())) {
+        updatedata.status = status;
+    }
+
+
+    if (type && !['robux', 'ticket', 'ingame'].includes(type.toLowerCase())) {
+        return res.status(400).json({ 
+            message: "bad-request", 
+            data: "Invalid type! Must be one of: robux, ticket, ingame." 
+        });
+    }
+
+    if (type && type.toLowerCase() === 'ticket') {
+        // check available tickets
+        const availableTickets = await Ticket.countDocuments({ status: "to-generate" })
+            .then(data => data)
+            .catch(err => {
+                console.log(`There's a problem checking available tickets. Error ${err}`);
+                return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+            });
+        if (availableTickets <= 0) {
+            return res.status(400).json({ 
+                message: "bad-request", 
+                data: "No available tickets to assign! Please generate more tickets." 
+            });
+        }
+
+        if (ids.length > availableTickets) {
+            return res.status(400).json({ 
+                message: "bad-request", 
+                data: `You can only assign up to ${availableTickets} tickets at a time!` 
+            });
+        }
+    } else if (type && type.toLowerCase() === 'robux') {
+        // check available robux codes
+        const availableRobuxCodes = await RobuxCode.countDocuments({ status: "to-generate" })
+            .then(data => data)
+            .catch(err => {
+                console.log(`There's a problem checking available robux codes. Error ${err}`);
+                return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+            });
+        if (availableRobuxCodes <= 0) {
+            return res.status(400).json({ 
+                message: "bad-request", 
+                data: "No available robux codes to assign! Please generate more robux codes." 
+            });
+        }
+
+        if (ids.length > availableRobuxCodes) {
+            return res.status(400).json({ 
+                message: "bad-request", 
+                data: `You can only assign up to ${availableRobuxCodes} robux codes at a time!` 
+            });
+        }
+    } 
+
+    if (Object.keys(updatedata).length === 0) {
+        return res.status(400).json({ 
+            message: "bad-request", 
+            data: "Please provide at least one field to update!" 
+        });
+    }
+
+
+    await Code.updateMany(
+        { _id: { $in: ids } },
+        { $set: updatedata }
+    )
+        .then(data => data)
+        .catch(err => {
+            console.log(`There's a problem updating the codes. Error ${err}`);
+            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+        });
+
+    return res.json({
+        message: "success",
+    });
+}

@@ -44,7 +44,7 @@ function indexToComplexCode(index, length = 9) {
         codeChars.slice(6, 9).join('')
     ];
 
-    return codeGroups.join('-');
+    return codeGroups.join('');
 }
 
 exports.getNextCode = (index, length = 9) => {
