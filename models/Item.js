@@ -8,7 +8,7 @@ const ItemSchema = new mongoose.Schema(
         },
         category: {
             type: String,
-            enum: ['exclusive', 'roblux', 'ticket', 'ingame', 'chest'],
+            enum: ['exclusive', 'robux', 'ticket', 'ingame', 'chest'],
         },
         quantity: {
             type: Number,
