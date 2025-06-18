@@ -20,10 +20,9 @@ function shuffle(array, rand) {
     return arr;
 }
 
-function indexToComplexCode(index, length = 9) {
-    const groupLength = 3;
-    const totalChars = groupLength * 3;
-    if (length !== totalChars) throw new Error("Code length must be 9 (3 groups of 3)");
+function indexToComplexCode(index, length) {
+    console.log(`Generating code for index: ${index}, length: ${length}`);
+    if (length < 7 || length > 12) throw new Error("Code length must be between 7 and 12");
 
     // Use index as seed for PRNG
     const rand = mulberry32(index);
@@ -31,23 +30,18 @@ function indexToComplexCode(index, length = 9) {
     // Shuffle allowedChars for this code
     const shuffledChars = shuffle(allowedChars.split(''), rand);
 
-    // Pick 9 characters from the shuffled array
-    let codeChars = [];
-    for (let i = 0; i < totalChars; i++) {
-        codeChars.push(shuffledChars[i]);
+    // Pick the required number of characters from the shuffled array
+    let code = '';
+    for (let i = 0; i < length; i++) {
+        code += shuffledChars[i];
     }
 
-    // Group into 3 groups of 3
-    const codeGroups = [
-        codeChars.slice(0, 3).join(''),
-        codeChars.slice(3, 6).join(''),
-        codeChars.slice(6, 9).join('')
-    ];
-
-    return codeGroups.join('');
+    return code;
 }
 
-exports.getNextCode = (index, length = 9) => {
+exports.getNextCode = (index, length ) => {
+
+    console.log(`Generating code for index: ${index}, length: ${length}`);
     if (typeof index !== 'number') return indexToComplexCode(0, length);
     return indexToComplexCode(index + 1, length);
 };

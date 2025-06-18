@@ -46,15 +46,18 @@ exports.newgeneratecode = async (req, res) => {
         const codes = [];
 
         // Get the last code from DB to continue sequence
+
         const totalCodes = await Code.countDocuments({ length: length || 9 })
 
 
         // Remove hyphens from last code if exists
-        let lastCode = totalCodes || 0;
+        let lastCode = (totalCodes || 0) + 1;
         let currentCode = lastCode;
 
+        console.log(`Generating codes starting from: ${lastCode}`);
 
-        for (let i = 1; i < codeamount; i++) {
+
+        for (let i = 0; i < codeamount; i++) {
             // Get next code in sequence
             currentCode = getNextCode(lastCode + i, length || 9);
             
@@ -250,7 +253,7 @@ exports.newgeneratecode = async (req, res) => {
         }
         
         await Code.insertMany(codeData);
-        console.timeEnd('Code Processing Time');
+        console.timeEnd('Code Processing Time End');
         if (socketid) {
             io.to(socketid).emit('generate-progress', { 
                 percentage: 95,
@@ -368,7 +371,7 @@ exports.getcodes = async (req, res) => {
             $limit: pageOptions.limit,
         },
         {
-            $sort: { createdAt: -1 }
+            $sort: { index: -1 }
         }
     ])
         .then(data => data)
@@ -382,11 +385,13 @@ exports.getcodes = async (req, res) => {
             id: code._id,
             code: code.code,
             status: code.status,
+            index: code.index,
              items: code.items.map(item => ({
                 id: item._id,
                 itemid: item.itemid,
                 itemname: item.itemname,
                 quantity: item?.quantity || 0,
+                rarity: item.rarity || "none",
             })),
             expiration: moment(code.expiration).format("YYYY-MM-DD"),
             type: code.type,
