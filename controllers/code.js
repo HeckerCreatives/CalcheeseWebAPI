@@ -189,6 +189,8 @@ exports.newgeneratecode = async (req, res) => {
                         );
                     await batchSession.commitTransaction();
 
+                    
+
                     if (socketid) {
                         const percentage = Math.round(((batchEnd) / codeamount) * 40) + 50;
                         io.to(socketid).emit('generate-progress', {
