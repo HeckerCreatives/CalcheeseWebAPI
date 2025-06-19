@@ -51,7 +51,7 @@ exports.newgeneratecode = async (req, res) => {
         let lastCode = (totalCodes || 0) + 1;
         let currentCode = lastCode;
 
-
+        console.log(`Last code index: ${lastCode}`);
         if (socketid) {
             io.to(socketid).emit('generate-progress', { 
             percentage: 40,
@@ -67,7 +67,7 @@ exports.newgeneratecode = async (req, res) => {
             codes.push(currentCode);
 
             if (i % Math.max(1, Math.floor(codeamount / 10)) === 0) {
-                const percentage = Math.round((i / codeamount) * 30) + 10;
+                const percentage = Math.round((i / codeamount) * 80) + 10;
                 if (socketid) {
                 io.to(socketid).emit('generate-progress', { 
                     percentage,
@@ -113,7 +113,7 @@ exports.newgeneratecode = async (req, res) => {
                     codes.push(currentCode);
 
                     if (i % Math.max(1, Math.floor(codeamount / 10)) === 0) {
-                        const percentage = Math.round((i / codeamount) * 30) + 10;
+                        const percentage = Math.round((i / codeamount) * 80) + 10;
                         if (socketid) {
                             io.to(socketid).emit('generate-progress', { 
                                 percentage,
@@ -154,54 +154,56 @@ exports.newgeneratecode = async (req, res) => {
                     });
                 }
         } else if (type === "ingame" || type === "exclusive" || type === "chest") {
-            const BATCH_SIZE = 100000;
-            let currentIndex = (lastCode || 0);
+            const BATCH_SIZE = 1000; // Reduced batch size
+            let startIndex = (lastCode || 0);
             
             for (let batchStart = 0; batchStart < codeamount; batchStart += BATCH_SIZE) {
-                const batchEnd = Math.min(batchStart + BATCH_SIZE, codeamount);
-                const batchData = [];
-                
-                // Generate and process codes in current batch
-                for (let i = batchStart; i < batchEnd; i++) {
-                    const currentCode = getNextCode(currentIndex, length || 9);
-                    currentIndex++;
-                    batchData.push({
-                        expiration: expiration,
-                        code: currentCode,
-                        items: items,
-                        type: type,
-                        isUsed: false,
-                        index: currentIndex,
-                        length: length || 9,
-                        rarity: rarity
-                    });
+                // Start a new transaction for each batch
+                const batchSession = await mongoose.startSession();
+                batchSession.startTransaction();
 
-                    if (i % Math.max(1, Math.floor(codeamount / 10)) === 0) {
-                        const percentage = Math.round((i / codeamount) * 30) + 10;
-                        if (socketid) {
-                            io.to(socketid).emit('generate-progress', { 
-                                percentage,
-                                status: `Generating code patterns... ${i}/${codeamount}`
-                            });
-                        }
+                try {
+                    const batchEnd = Math.min(batchStart + BATCH_SIZE, codeamount);
+                    const batchData = [];
+                    
+                    for (let i = 0; i < (batchEnd - batchStart); i++) {
+                        const currentIndex = startIndex + batchStart + i;
+                        const currentCode = getNextCode(currentIndex, length || 9);
+                        batchData.push({
+                            expiration: expiration,
+                            code: currentCode,
+                            items: items,
+                            type: type,
+                            isUsed: false,
+                            index: currentIndex,
+                            length: length || 9,
+                            rarity: rarity
+                        });
                     }
-                }
-                
-                await Code.insertMany(batchData, { session });
+                    
+                    await Code.insertMany(batchData, { session: batchSession, maxTimeMS: 60000 });
+                    await Analytics.findOneAndUpdate(
+                        {}, 
+                        { $inc: { totaltoclaim: batchData.length } }, 
+                        { session: batchSession, new: true }
+                        );
+                    await batchSession.commitTransaction();
 
-                if (socketid) {
-                    const percentage = Math.round(((batchEnd) / codeamount) * 40) + 50;
-                    io.to(socketid).emit('generate-progress', {
-                        percentage,
-                        status: `Saving In-Game codes. Progress: ${batchEnd.toLocaleString()}/${codeamount.toLocaleString()}`
-                    });
+                    if (socketid) {
+                        const percentage = Math.round(((batchEnd) / codeamount) * 40) + 50;
+                        io.to(socketid).emit('generate-progress', {
+                            percentage,
+                            status: `Saving In-Game codes. Progress: ${batchEnd.toLocaleString()}/${codeamount.toLocaleString()}`
+                        });
+                    }
+                } catch (err) {
+                    await batchSession.abortTransaction();
+                    throw err;
+                } finally {
+                    batchSession.endSession();
                 }
             }
 
-            await Analytics.findOneAndUpdate({}, { $inc: { totaltoclaim: codeamount } }, { session, new: true });
-            await session.commitTransaction();
-            session.endSession();
-            return res.json({ message: "success" });
         } else {
             await session.abortTransaction();
             session.endSession();
@@ -215,6 +217,7 @@ exports.newgeneratecode = async (req, res) => {
             });
         }
 
+        if(type === 'robux' || type === 'ticket') {
         await Code.insertMany(codeData, { session });
 
         const update = { 
@@ -222,10 +225,11 @@ exports.newgeneratecode = async (req, res) => {
                 totaltoclaim: codeamount,
                 totaltogenerate: (type === 'robux' || type === 'ticket') ? -codeamount : 0
             }
-        };
+        };  
+
 
         await Analytics.findOneAndUpdate({}, update, { session, new: true });
-
+        }
         await session.commitTransaction();
         session.endSession();
 
@@ -241,7 +245,9 @@ exports.newgeneratecode = async (req, res) => {
 
     } catch (err) {
         console.log(`Transaction error: ${err}`);
-        await session.abortTransaction();
+        if (session.inTransaction()) {
+            await session.abortTransaction();
+        }
         session.endSession();
         return res.status(400).json({ 
             message: "bad-request", 
