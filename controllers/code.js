@@ -29,13 +29,11 @@ exports.newgeneratecode = async (req, res) => {
             status: 'Starting code generation...'
         });
     }
-    
 
-    // const session = await Code.startSession();
-    // session.startTransaction();
+    const session = await mongoose.startSession();
+    session.startTransaction();
 
     try {
-
         if (socketid) {
             io.to(socketid).emit('generate-progress', { 
                 percentage: 10,
@@ -44,222 +42,152 @@ exports.newgeneratecode = async (req, res) => {
         }
 
         const codes = [];
+        const highestIndexCode = await Code.findOne().sort({ index: -1 }).session(session);
+        const totalCodes = highestIndexCode ? highestIndexCode.index : 0;
 
-        // Get the last code from DB to continue sequence
-
-        const totalCodes = await Code.countDocuments({})
-
-
-        // Remove hyphens from last code if exists
         let lastCode = (totalCodes || 0) + 1;
         let currentCode = lastCode;
 
+        console.log(`Generating ${codeamount} codes starting from index ${lastCode}`);
 
         for (let i = 0; i < codeamount; i++) {
-            // Get next code in sequence
             currentCode = getNextCode(lastCode + i, length || 9);
-            
-            // Format with hyphens
             codes.push(currentCode);
 
             if (i % Math.max(1, Math.floor(codeamount / 10)) === 0) {
-            const percentage = Math.round((i / codeamount) * 30) + 10;
-            if (socketid) {
-                io.to(socketid).emit('generate-progress', { 
-                percentage,
-                status: `Generating code patterns... ${i}/${codeamount}`
-                });
-            }
+                const percentage = Math.round((i / codeamount) * 30) + 10;
+                if (socketid) {
+                    io.to(socketid).emit('generate-progress', { 
+                        percentage,
+                        status: `Generating code patterns... ${i}/${codeamount}`
+                    });
+                }
             }
         }
 
-        if (socketid) {
-            io.to(socketid).emit('generate-progress', { 
-                percentage: 40,
-                status: 'Checking for duplicate codes...'
-            });
-        }
         let codeData = [];
 
-        if (socketid) {
-            io.to(socketid).emit('generate-progress', { 
-                percentage: 50,
-                status: 'Preparing codes data...'
-            });
-        }
-
-        // // Check for duplicate codes if there are existing codes remove it from the generated codes
-       
-        // console.time('Checking for duplicate codes');
-        // const BATCH_SIZE = 250000;
-        // for (let i = 0; i < codes.length; i += BATCH_SIZE) {
-        //     const batch = codes.slice(i, i + BATCH_SIZE);
-        //     const existingCodes = await Code.find({ 
-        //       code: { $in: batch }
-        //     }).select('code').lean();
-
-        //     if (socketid) {
-        //     io.to(socketid).emit('generate-progress', {
-        //         percentage: Math.round((i / codes.length) * 20) + 20, // 20-40% progress
-        //         status: `Checking for duplicate codes... ${Math.min(i + BATCH_SIZE, codeamount).toLocaleString()}/${codeamount.toLocaleString()}`
-        //     });
-        //     }
-
-        //     if (existingCodes.length > 0) {
-        //     const existingCodeSet = new Set(existingCodes.map(code => code.code));
-        //     for (let j = 0; j < batch.length; j++) {
-        //         if (existingCodeSet.has(batch[j])) {
-        //         codes[i + j] = getNextCode(currentCode++, 9);
-        //         }
-        //     }
-        //     }
-        // }
-        // console.timeEnd('Checking for duplicate codes');
-
-
-
-        console.time('Code Processing Time');
         if (type === "robux") {
             const temprobuxcodes = await RobuxCode.find({ status: "to-generate" }).session(session);
             if (!temprobuxcodes || temprobuxcodes.length === 0) {
-                // await session.abortTransaction();
-                // session.endSession();
+                await session.abortTransaction();
+                session.endSession();
                 return res.status(400).json({ message: "failed", data: "No unclaimed Robux codes available!" });
             }
 
             if (codeamount > temprobuxcodes.length) {
-                // await session.abortTransaction();
-                // session.endSession();
+                await session.abortTransaction();
+                session.endSession();
                 return res.status(400).json({ message: "failed", data: "Requested Robux code quantity exceeds available quantity!" });
             }
 
             for (let i = 0; i < codeamount; i++) {
                 const tempcode = temprobuxcodes[i];
-                const generatedCode = codes[i];
-
                 tempcode.status = "to-claim";
-                await tempcode.save(
-                    // { session }
-                );
+                await tempcode.save({ session });
 
                 codeData.push({
                     expiration: expiration,
-                    code: generatedCode,
+                    code: codes[i],
                     items: items,
                     robuxcode: tempcode._id,
                     type: "robux",
                     isUsed: false,
-                    index: lastCode + i + 1, // Store index for reference
-                    length: length || 9, // Store code length
+                    index: lastCode + i + 1,
+                    length: length || 9,
                 });
-
-                if (i % Math.max(1, Math.floor(codeamount / 10)) === 0) {
-                    const percentage = Math.round((i / codeamount) * 20) + 60; // 60-80% progress
-                    if (socketid) {
-                        io.to(socketid).emit('generate-progress', { 
-                            percentage,
-                            status: `Processing Robux codes... ${i}/${codeamount}`
-                        });
-                    }
-                }
             }
         } else if (type === "ticket") {
-            const availableTickets = await Ticket.find({ status: "to-generate" })
-            // .session(session);
+            const availableTickets = await Ticket.find({ status: "to-generate" }).session(session);
             if (!availableTickets || availableTickets.length === 0) {
-                // await session.abortTransaction();
-                // session.endSession();
+                await session.abortTransaction();
+                session.endSession();
                 return res.status(400).json({ message: "failed", data: "No available tickets!" });
             }
 
             if (codeamount > availableTickets.length) {
-                // await session.abortTransaction();
-                // session.endSession();
+                await session.abortTransaction();
+                session.endSession();
                 return res.status(400).json({ message: "failed", data: "Requested ticket quantity exceeds available quantity!" });
             }
 
             for (let i = 0; i < codeamount; i++) {
                 const ticketDoc = availableTickets[i];
-                const generatedCode = codes[i];
-
                 ticketDoc.status = "to-claim";
-                await ticketDoc.save();
+                await ticketDoc.save({ session });
 
                 codeData.push({
                     expiration: expiration,
-                    code: generatedCode,
+                    code: codes[i],
                     items: items,
                     ticket: ticketDoc._id,
                     type: "ticket",
                     isUsed: false,
-                    index: lastCode + i + 1, // Store index for reference
-                    length: length || 9, // Store code length
+                    index: lastCode + i + 1,
+                    length: length || 9,
                 });
-
-                if (i % Math.max(1, Math.floor(codeamount / 10)) === 0) {
-                    const percentage = Math.round((i / codeamount) * 20) + 60; // 60-80% progress
-                    if (socketid) {
-                        io.to(socketid).emit('generate-progress', { 
-                            percentage,
-                            status: `Processing Ticket codes... ${i}/${codeamount}`
-                        });
-                    }
-                }
             }
         } else if (type === "ingame" || type === "exclusive" || type === "chest") {
             const BATCH_SIZE = 100000;
             let index = (lastCode || 0) + 1;
-                for (let batchStart = 0; batchStart < codeamount; batchStart += BATCH_SIZE) {
-                    const batchEnd = Math.min(batchStart + BATCH_SIZE, codeamount);
-                    let codeData = [];
-                    for (let i = batchStart; i < batchEnd; i++) {
-                        codeData.push({
-                            expiration: expiration,
-                            code: codes[i],
-                            items: items,
-                            type: type,
-                            isUsed: false,
-                            index: index,
-                            length: length || 9, // Store code length 
-                        });
-                        index++;
-                    }
-                    await Code.insertMany(codeData);
-
-                        if (socketid) {
-                            const percentage = Math.round(((batchEnd) / codeamount) * 40) + 50; // 50-90% progress
-                            io.to(socketid).emit('generate-progress', {
-                                percentage,
-                                status: `Saving In-Game codes. Progress: ${batchEnd.toLocaleString()}/${codeamount.toLocaleString()}`
-                            });
-                        }
-                }
-            const update = { $inc: { totaltoclaim: codeamount } };
+            
+            for (let batchStart = 0; batchStart < codeamount; batchStart += BATCH_SIZE) {
+                const batchEnd = Math.min(batchStart + BATCH_SIZE, codeamount);
+                const batchData = [];
                 
-            await Analytics.findOneAndUpdate({}, update, { new: true })
+                for (let i = batchStart; i < batchEnd; i++) {
+                    batchData.push({
+                        expiration: expiration,
+                        code: codes[i],
+                        items: items,
+                        type: type,
+                        isUsed: false,
+                        index: index++,
+                        length: length || 9,
+                    });
+                }
+                
+                await Code.insertMany(batchData, { session });
+
+                if (socketid) {
+                    const percentage = Math.round(((batchEnd) / codeamount) * 40) + 50;
+                    io.to(socketid).emit('generate-progress', {
+                        percentage,
+                        status: `Saving In-Game codes. Progress: ${batchEnd.toLocaleString()}/${codeamount.toLocaleString()}`
+                    });
+                }
+            }
+
+            await Analytics.findOneAndUpdate({}, { $inc: { totaltoclaim: codeamount } }, { session, new: true });
+            await session.commitTransaction();
+            session.endSession();
             return res.json({ message: "success" });
         } else {
-            // await session.abortTransaction();
-            // session.endSession();
+            await session.abortTransaction();
+            session.endSession();
             return res.status(400).json({ message: "failed", data: "Invalid type!" });
         }
+
         if (socketid) {
             io.to(socketid).emit('generate-progress', { 
                 percentage: 90,
                 status: 'Saving codes to database...'
             });
         }
-        
-        await Code.insertMany(codeData);
-        console.timeEnd('Code Processing Time End');
-        if (socketid) {
-            io.to(socketid).emit('generate-progress', { 
-                percentage: 95,
-                status: 'Finalizing transaction...'
-            });
-        }
-        // await session.commitTransaction();
-        // session.endSession();
+
+        await Code.insertMany(codeData, { session });
+
+        const update = { 
+            $inc: { 
+                totaltoclaim: codeamount,
+                totaltogenerate: (type === 'robux' || type === 'ticket') ? -codeamount : 0
+            }
+        };
+
+        await Analytics.findOneAndUpdate({}, update, { session, new: true });
+
+        await session.commitTransaction();
+        session.endSession();
 
         if (socketid) {
             io.to(socketid).emit('generate-progress', { 
@@ -269,23 +197,16 @@ exports.newgeneratecode = async (req, res) => {
             });
         }
 
-
-            const update = { $inc: { totaltoclaim: codeamount } };
-            
-            if (type === 'robux' || type === 'ticket') {
-            update.$inc.totaltogenerate = -codeamount;
-            }
-
-            await Analytics.findOneAndUpdate({}, update, { new: true })
-
-            
-
         res.json({ message: "success" });
+
     } catch (err) {
         console.log(`Transaction error: ${err}`);
-        // await session.abortTransaction();
-        // session.endSession();
-        return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+        await session.abortTransaction();
+        session.endSession();
+        return res.status(400).json({ 
+            message: "bad-request", 
+            data: "There's a problem with the server! Please contact customer support for more details." 
+        });
     }
 };
 

@@ -21,7 +21,6 @@ function shuffle(array, rand) {
 }
 
 function indexToComplexCode(index, length) {
-    console.log(`Generating code for index: ${index}, length: ${length}`);
     if (length < 7 || length > 12) throw new Error("Code length must be between 7 and 12");
 
     // Use index as seed for PRNG
@@ -41,7 +40,6 @@ function indexToComplexCode(index, length) {
 
 exports.getNextCode = (index, length ) => {
 
-    console.log(`Generating code for index: ${index}, length: ${length}`);
     if (typeof index !== 'number') return indexToComplexCode(0, length);
     return indexToComplexCode(index + 1, length);
 };
