@@ -28,7 +28,7 @@ exports.newgeneratecode = async (req, res) => {
 
     try {
         
-        handleCodeGeneration(socketid)
+        setImmediate(() => handleCodeGeneration(req.body, socketid));
 
         res.json({ message: "success" });
     } catch (err) {
@@ -44,9 +44,16 @@ exports.newgeneratecode = async (req, res) => {
     }
 };
 
-async function handleCodeGeneration(socketid) {
+async function handleCodeGeneration(data) {
+    const { socketid, expiration, codeamount, items, type, length, rarity } = data;
 
     console.log("socketid", socketid)
+    console.log("expiration", expiration)
+    console.log("codeamount", codeamount)
+    console.log("items", items)
+    console.log("type", type)
+    console.log("length", length)
+    console.log("rarity", rarity)
     console.log("STARTING CODE GENERATION")
 
     const session = await mongoose.startSession();
