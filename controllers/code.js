@@ -37,6 +37,29 @@ exports.newgeneratecode = async (req, res) => {
     session.startTransaction();
 
     try {
+        
+        handleCodeGeneration(socketid)
+
+        res.json({ message: "success" });
+    } catch (err) {
+        console.log(`Transaction error: ${err}`);
+        if (session.inTransaction()) {
+            await session.abortTransaction();
+        }
+        session.endSession();
+        return res.status(400).json({ 
+            message: "bad-request", 
+            data: "There's a problem with the server! Please contact customer support for more details." 
+        });
+    }
+};
+
+async function handleCodeGeneration(socketid) {
+
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try{
         if (socketid) {
             io.to(socketid).emit('generate-progress', { 
                 percentage: 10,
@@ -234,7 +257,7 @@ exports.newgeneratecode = async (req, res) => {
         }
         await session.commitTransaction();
         session.endSession();
-
+        
         if (socketid) {
             io.to(socketid).emit('generate-progress', { 
                 percentage: 100,
@@ -242,22 +265,11 @@ exports.newgeneratecode = async (req, res) => {
                 success: true
             });
         }
-
-        res.json({ message: "success" });
-
-    } catch (err) {
-        console.log(`Transaction error: ${err}`);
-        if (session.inTransaction()) {
-            await session.abortTransaction();
-        }
-        session.endSession();
-        return res.status(400).json({ 
-            message: "bad-request", 
-            data: "There's a problem with the server! Please contact customer support for more details." 
-        });
     }
-};
+    catch(err){
 
+    }
+}
 
 exports.getcodes = async (req, res) => {
 
