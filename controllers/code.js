@@ -52,21 +52,6 @@ exports.newgeneratecode = async (req, res) => {
         let currentCode = lastCode;
 
 
-        for (let i = 0; i < codeamount; i++) {
-            currentCode = getNextCode(lastCode + i, length || 9);
-            codes.push(currentCode);
-
-            if (i % Math.max(1, Math.floor(codeamount / 10)) === 0) {
-                const percentage = Math.round((i / codeamount) * 30) + 10;
-                if (socketid) {
-                    io.to(socketid).emit('generate-progress', { 
-                        percentage,
-                        status: `Generating code patterns... ${i}/${codeamount}`
-                    });
-                }
-            }
-        }
-
         if (socketid) {
             io.to(socketid).emit('generate-progress', { 
             percentage: 40,
@@ -77,86 +62,129 @@ exports.newgeneratecode = async (req, res) => {
         let codeData = [];
 
         if (type === "robux") {
+            for (let i = 0; i < codeamount; i++) {
+            currentCode = getNextCode(lastCode + i, length || 9);
+            codes.push(currentCode);
+
+            if (i % Math.max(1, Math.floor(codeamount / 10)) === 0) {
+                const percentage = Math.round((i / codeamount) * 30) + 10;
+                if (socketid) {
+                io.to(socketid).emit('generate-progress', { 
+                    percentage,
+                    status: `Generating code patterns... ${i}/${codeamount}`
+                });
+                }
+            }
+            }
+            
             const temprobuxcodes = await RobuxCode.find({ status: "to-generate" }).session(session);
             if (!temprobuxcodes || temprobuxcodes.length === 0) {
-                await session.abortTransaction();
-                session.endSession();
-                return res.status(400).json({ message: "failed", data: "No unclaimed Robux codes available!" });
+            await session.abortTransaction();
+            session.endSession();
+            return res.status(400).json({ message: "failed", data: "No unclaimed Robux codes available!" });
             }
 
             if (codeamount > temprobuxcodes.length) {
-                await session.abortTransaction();
-                session.endSession();
-                return res.status(400).json({ message: "failed", data: "Requested Robux code quantity exceeds available quantity!" });
+            await session.abortTransaction();
+            session.endSession();
+            return res.status(400).json({ message: "failed", data: "Requested Robux code quantity exceeds available quantity!" });
             }
 
             for (let i = 0; i < codeamount; i++) {
-                const tempcode = temprobuxcodes[i];
-                tempcode.status = "to-claim";
-                await tempcode.save({ session });
+            const tempcode = temprobuxcodes[i];
+            tempcode.status = "to-claim";
+            await tempcode.save({ session });
 
-                codeData.push({
-                    expiration: expiration,
-                    code: codes[i],
-                    items: items,
-                    robuxcode: tempcode._id,
-                    type: "robux",
-                    isUsed: false,
-                    index: lastCode + i + 1,
-                    length: length || 9,
-                    rarity: rarity
-                });
+            codeData.push({
+                expiration: expiration,
+                code: codes[i],
+                items: items,
+                robuxcode: tempcode._id,
+                type: "robux",
+                isUsed: false,
+                index: lastCode + i + 1,
+                length: length || 9,
+                rarity: rarity
+            });
             }
         } else if (type === "ticket") {
-            const availableTickets = await Ticket.find({ status: "to-generate" }).session(session);
-            if (!availableTickets || availableTickets.length === 0) {
-                await session.abortTransaction();
-                session.endSession();
-                return res.status(400).json({ message: "failed", data: "No available tickets!" });
-            }
-
-            if (codeamount > availableTickets.length) {
-                await session.abortTransaction();
-                session.endSession();
-                return res.status(400).json({ message: "failed", data: "Requested ticket quantity exceeds available quantity!" });
-            }
-
             for (let i = 0; i < codeamount; i++) {
-                const ticketDoc = availableTickets[i];
-                ticketDoc.status = "to-claim";
-                await ticketDoc.save({ session });
+                    currentCode = getNextCode(lastCode + i, length || 9);
+                    codes.push(currentCode);
 
-                codeData.push({
-                    expiration: expiration,
-                    code: codes[i],
-                    items: items,
-                    ticket: ticketDoc._id,
-                    type: "ticket",
-                    isUsed: false,
-                    index: lastCode + i + 1,
-                    length: length || 9,
-                    rarity: rarity
-                });
-            }
+                    if (i % Math.max(1, Math.floor(codeamount / 10)) === 0) {
+                        const percentage = Math.round((i / codeamount) * 30) + 10;
+                        if (socketid) {
+                            io.to(socketid).emit('generate-progress', { 
+                                percentage,
+                                status: `Generating code patterns... ${i}/${codeamount}`
+                            });
+                        }
+                    }
+                }
+
+                const availableTickets = await Ticket.find({ status: "to-generate" }).session(session);
+                if (!availableTickets || availableTickets.length === 0) {
+                    await session.abortTransaction();
+                    session.endSession();
+                    return res.status(400).json({ message: "failed", data: "No available tickets!" });
+                }
+
+                if (codeamount > availableTickets.length) {
+                    await session.abortTransaction();
+                    session.endSession();
+                    return res.status(400).json({ message: "failed", data: "Requested ticket quantity exceeds available quantity!" });
+                }
+
+                for (let i = 0; i < codeamount; i++) {
+                    const ticketDoc = availableTickets[i];
+                    ticketDoc.status = "to-claim";
+                    await ticketDoc.save({ session });
+
+                    codeData.push({
+                        expiration: expiration,
+                        code: codes[i],
+                        items: items,
+                        ticket: ticketDoc._id,
+                        type: "ticket",
+                        isUsed: false,
+                        index: lastCode + i + 1,
+                        length: length || 9,
+                        rarity: rarity
+                    });
+                }
         } else if (type === "ingame" || type === "exclusive" || type === "chest") {
             const BATCH_SIZE = 100000;
-            let index = (lastCode || 0) + 1;
+            let currentIndex = (lastCode || 0);
             
             for (let batchStart = 0; batchStart < codeamount; batchStart += BATCH_SIZE) {
                 const batchEnd = Math.min(batchStart + BATCH_SIZE, codeamount);
                 const batchData = [];
                 
+                // Generate and process codes in current batch
                 for (let i = batchStart; i < batchEnd; i++) {
+                    const currentCode = getNextCode(currentIndex, length || 9);
+                    currentIndex++;
                     batchData.push({
                         expiration: expiration,
-                        code: codes[i],
+                        code: currentCode,
                         items: items,
                         type: type,
                         isUsed: false,
-                        index: index++,
+                        index: currentIndex,
                         length: length || 9,
                         rarity: rarity
                     });
+
+                    if (i % Math.max(1, Math.floor(codeamount / 10)) === 0) {
+                        const percentage = Math.round((i / codeamount) * 30) + 10;
+                        if (socketid) {
+                            io.to(socketid).emit('generate-progress', { 
+                                percentage,
+                                status: `Generating code patterns... ${i}/${codeamount}`
+                            });
+                        }
+                    }
                 }
                 
                 await Code.insertMany(batchData, { session });
