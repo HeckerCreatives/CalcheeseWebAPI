@@ -932,7 +932,7 @@ exports.exportCodesCSV = async (req, res) => {
 
 exports.editmultiplecodes = async (req, res) => {
 
-    const { ids, type, items, expiration, status } = req.body;
+    const { ids, type, items, rarity, expiration, status } = req.body;
     if (!ids || !Array.isArray(ids) || ids.length === 0) {
         return res.status(400).json({ 
             message: "bad-request", 
@@ -946,16 +946,24 @@ exports.editmultiplecodes = async (req, res) => {
     if (items && Array.isArray(items) && items.length > 0) {
         updatedata.items = items.map(item => new mongoose.Types.ObjectId(item));
     }
+    if (rarity && ["common", "uncommon", "rare", "epic", "legendary"].includes(rarity)) {
+        updatedata.rarity = rarity;
+    } else if (rarity) {
+        return res.status(400).json({ 
+            message: "bad-request", 
+            data: "Invalid rarity! Must be one of: common, uncommon, rare, epic, legendary." 
+        });
+    }
     if (expiration) updatedata.expiration = new Date(expiration);
     if (status && ['to-generate', "to-claim", 'claimed', "approved", "rejected"].includes(status.toLowerCase())) {
         updatedata.status = status;
     }
 
 
-    if (type && !['robux', 'ticket', 'ingame'].includes(type.toLowerCase())) {
+    if (type && !['robux', 'ticket', 'ingame', 'exclusive', 'chest'].includes(type.toLowerCase())) {
         return res.status(400).json({ 
             message: "bad-request", 
-            data: "Invalid type! Must be one of: robux, ticket, ingame." 
+            data: "Invalid type! Must be one of: robux, ticket, ingame, exclusive and chest." 
         });
     }
 
