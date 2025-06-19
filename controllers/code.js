@@ -56,20 +56,16 @@ async function handleCodeGeneration(data) {
 
     console.log("SOCKET WILL SEND FIRST STATUS")
 
-    if (socketid) {
-        io.to(socketid).emit('generate-progress', { 
-            percentage: 0,
-            status: 'Starting code generation...'
-        });
-    }
+    io.emit('generate-progress', { 
+        percentage: 0,
+        status: 'Starting code generation...'
+    });
 
     try{
-        if (socketid) {
-            io.to(socketid).emit('generate-progress', { 
-                percentage: 10,
-                status: 'Generating code patterns...'
-            });
-        }
+        io.emit('generate-progress', { 
+            percentage: 10,
+            status: 'Generating code patterns...'
+        });
 
         console.log("CODE LOGIC")
 
@@ -81,12 +77,10 @@ async function handleCodeGeneration(data) {
         let currentCode = lastCode;
 
         console.log(`Last code index: ${lastCode}`);
-        if (socketid) {
-            io.to(socketid).emit('generate-progress', { 
+        io.to(socketid).emit('generate-progress', { 
             percentage: 40,
             status: `Preparing to save codes...`
-            });
-        }
+        });
 
         let codeData = [];
 
@@ -99,12 +93,10 @@ async function handleCodeGeneration(data) {
 
             if (i % Math.max(1, Math.floor(codeamount / 10)) === 0) {
                 const percentage = Math.round((i / codeamount) * 80) + 10;
-                if (socketid) {
-                io.to(socketid).emit('generate-progress', { 
+                io.emit('generate-progress', { 
                     percentage,
                     status: `Generating code patterns... ${i}/${codeamount}`
                 });
-                }
             }
             }
             
@@ -112,26 +104,22 @@ async function handleCodeGeneration(data) {
             if (!temprobuxcodes || temprobuxcodes.length === 0) {
             await session.abortTransaction();
             session.endSession();
-                        if (socketid) {
-                io.to(socketid).emit('generate-progress', { 
-                    percentage: 100,
-                    status: 'failed',
-                    success: false
-                });
-            }
+            io.emit('generate-progress', { 
+                percentage: 100,
+                status: 'failed',
+                success: false
+            });
             return 
             }
 
             if (codeamount > temprobuxcodes.length) {
             await session.abortTransaction();
             session.endSession();
-            if (socketid) {
-                io.to(socketid).emit('generate-progress', { 
+                io.emit('generate-progress', { 
                     percentage: 100,
                     status: 'failed',
                     success: false
                 });
-            }
             return             
         }
 
@@ -159,12 +147,10 @@ async function handleCodeGeneration(data) {
 
                     if (i % Math.max(1, Math.floor(codeamount / 10)) === 0) {
                         const percentage = Math.round((i / codeamount) * 80) + 10;
-                        if (socketid) {
-                            io.to(socketid).emit('generate-progress', { 
-                                percentage,
-                                status: `Generating code patterns... ${i}/${codeamount}`
-                            });
-                        }
+                        io.emit('generate-progress', { 
+                            percentage,
+                            status: `Generating code patterns... ${i}/${codeamount}`
+                        });
                     }
                 }
 
@@ -172,26 +158,22 @@ async function handleCodeGeneration(data) {
                 if (!availableTickets || availableTickets.length === 0) {
                     await session.abortTransaction();
                     session.endSession();
-                if (socketid) {
-                        io.to(socketid).emit('generate-progress', { 
-                            percentage: 100,
-                            status: 'failed',
-                            success: false
-                        });
-                    }
+                    io.emit('generate-progress', { 
+                        percentage: 100,
+                        status: 'failed',
+                        success: false
+                    });
                     return                 
                 }
 
                 if (codeamount > availableTickets.length) {
                     await session.abortTransaction();
                     session.endSession();
-                if (socketid) {
-                        io.to(socketid).emit('generate-progress', { 
-                            percentage: 100,
-                            status: 'failed',
-                            success: false
-                        });
-                    }
+                    io.emit('generate-progress', { 
+                        percentage: 100,
+                        status: 'failed',
+                        success: false
+                    });
                     return                 
                 }
 
@@ -225,13 +207,11 @@ async function handleCodeGeneration(data) {
                     const batchEnd = Math.min(batchStart + BATCH_SIZE, codeamount);
                     const batchData = [];
 
-                    if (socketid) {
-                        const percentage = Math.round(((batchEnd) / codeamount) * 40) + 50;
-                        io.to(socketid).emit('generate-progress', {
-                            percentage,
-                            status: `Generating code for batch ${tempbatch}. Progress: ${batchEnd.toLocaleString()}/${codeamount.toLocaleString()}`
-                        });
-                    }
+                    const percentage = Math.round(((batchEnd) / codeamount) * 40) + 50;
+                    io.emit('generate-progress', {
+                        percentage,
+                        status: `Generating code for batch ${tempbatch}. Progress: ${batchEnd.toLocaleString()}/${codeamount.toLocaleString()}`
+                    });
                     
                     for (let i = 0; i < (batchEnd - batchStart); i++) {
                         const currentIndex = startIndex + batchStart + i;
@@ -258,13 +238,10 @@ async function handleCodeGeneration(data) {
 
                     
 
-                    if (socketid) {
-                        const percentage = Math.round(((batchEnd) / codeamount) * 40) + 50;
-                        io.to(socketid).emit('generate-progress', {
-                            percentage,
-                            status: `Saving In-Game codes for batch ${tempbatch}. Progress: ${batchEnd.toLocaleString()}/${codeamount.toLocaleString()}`
-                        });
-                    }
+                    io.emit('generate-progress', {
+                        percentage,
+                        status: `Saving In-Game codes for batch ${tempbatch}. Progress: ${batchEnd.toLocaleString()}/${codeamount.toLocaleString()}`
+                    });
                     tempbatch++
                 } catch (err) {
                     await batchSession.abortTransaction();
@@ -277,13 +254,11 @@ async function handleCodeGeneration(data) {
         } else {
             await session.abortTransaction();
             session.endSession();
-            if (socketid) {
-                io.to(socketid).emit('generate-progress', { 
-                    percentage: 100,
-                    status: 'failed',
-                    success: false
-                });
-            }
+            io.emit('generate-progress', { 
+                percentage: 100,
+                status: 'failed',
+                success: false
+            });
             return 
         }
 
