@@ -26,16 +26,6 @@ exports.newgeneratecode = async (req, res) => {
         return res.status(400).json({ message: "failed", data: "Please select a valid rarity!" });
     }
 
-    if (socketid) {
-        io.to(socketid).emit('generate-progress', { 
-            percentage: 0,
-            status: 'Starting code generation...'
-        });
-    }
-
-    const session = await mongoose.startSession();
-    session.startTransaction();
-
     try {
         
         handleCodeGeneration(socketid)
@@ -56,8 +46,19 @@ exports.newgeneratecode = async (req, res) => {
 
 async function handleCodeGeneration(socketid) {
 
+    console.log("STARTING CODE GENERATION")
+
     const session = await mongoose.startSession();
     session.startTransaction();
+
+    console.log("SOCKET WILL SEND FIRST STATUS")
+
+    if (socketid) {
+        io.to(socketid).emit('generate-progress', { 
+            percentage: 0,
+            status: 'Starting code generation...'
+        });
+    }
 
     try{
         if (socketid) {
@@ -66,6 +67,8 @@ async function handleCodeGeneration(socketid) {
                 status: 'Generating code patterns...'
             });
         }
+
+        console.log("CODE LOGIC")
 
         const codes = [];
         const highestIndexCode = await Code.findOne().sort({ index: -1 }).session(session);
