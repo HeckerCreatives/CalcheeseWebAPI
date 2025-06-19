@@ -220,7 +220,7 @@ async function handleCodeGeneration(data) {
                     });
                 }
         } else if (type === "ingame" || type === "exclusive" || type === "chest") {
-            const BATCH_SIZE = 5000; // Reduced batch size
+            const BATCH_SIZE = 20000; // Reduced batch size
             let startIndex = (lastCode || 0);
             
             for (let batchStart = 0; batchStart < codeamount; batchStart += BATCH_SIZE) {
