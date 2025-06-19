@@ -39,6 +39,42 @@ exports.newgeneratecode = async (req, res) => {
     }
 };
 
+async function saveWithFallback(data, maxRetries = 3) {
+    let attempts = 0;
+    let currentData = [...data]; // Make a copy of the original data
+    
+    while (attempts < maxRetries) {
+        try {
+            await Code.insertMany(currentData);
+            return true;
+        } catch (err) {
+            attempts++;
+            console.log(`Insert attempt ${attempts} failed: ${err}`);
+            
+            if (attempts === maxRetries) {
+                console.log('Max retries reached, failing...');
+                throw err;
+            }
+
+            // Regenerate codes with new indices
+            const highestCode = await Code.findOne().sort({ index: -1 });
+            let newStartIndex = (highestCode?.index || 0) + 5000;
+            console.log(`Regenerating codes starting from index: ${newStartIndex} and the highest code is ${highestCode?.index || 0}`);
+            currentData = currentData.map(item => {
+                const newCode = getNextCode(newStartIndex, item.length);
+                newStartIndex++;
+                return {
+                    ...item,
+                    code: newCode,
+                    index: newStartIndex - 1
+                };
+            });
+            
+            // Wait before retrying (exponential backoff)
+            await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempts) * 1000));
+        }
+    }
+}
 async function handleCodeGeneration(data) {
     const { socketid, expiration, codeamount, items, type, length, rarity } = data;
 
@@ -215,15 +251,16 @@ async function handleCodeGeneration(data) {
                         });
                     }
                     
-                    await Code.insertMany(batchData);
+
+
+                    // Replace the original line with:
+                    await saveWithFallback(batchData);
                     await Analytics.findOneAndUpdate(
                         {}, 
                         { $inc: { totaltoclaim: batchData.length } }, 
                         { new: true }
                         );
-                    await batchSession.commitTransaction();
 
-                    
 
                     io.emit('generate-progress', {
                         percentage,
