@@ -67,6 +67,13 @@ exports.newgeneratecode = async (req, res) => {
             }
         }
 
+        if (socketid) {
+            io.to(socketid).emit('generate-progress', { 
+            percentage: 40,
+            status: `Preparing to save codes...`
+            });
+        }
+
         let codeData = [];
 
         if (type === "robux") {
