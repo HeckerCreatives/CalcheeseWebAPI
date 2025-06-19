@@ -46,6 +46,7 @@ exports.newgeneratecode = async (req, res) => {
 
 async function handleCodeGeneration(socketid) {
 
+    console.log("socketid", socketid)
     console.log("STARTING CODE GENERATION")
 
     const session = await mongoose.startSession();
@@ -193,6 +194,7 @@ async function handleCodeGeneration(socketid) {
                     const batchData = [];
                     
                     for (let i = 0; i < (batchEnd - batchStart); i++) {
+                        console.log(i)
                         const currentIndex = startIndex + batchStart + i;
                         const currentCode = getNextCode(currentIndex, length || 9);
                         batchData.push({
