@@ -32,11 +32,6 @@ exports.newgeneratecode = async (req, res) => {
 
         res.json({ message: "success" });
     } catch (err) {
-        console.log(`Transaction error: ${err}`);
-        if (session.inTransaction()) {
-            await session.abortTransaction();
-        }
-        session.endSession();
         return res.status(400).json({ 
             message: "bad-request", 
             data: "There's a problem with the server! Please contact customer support for more details." 
@@ -117,14 +112,28 @@ async function handleCodeGeneration(data) {
             if (!temprobuxcodes || temprobuxcodes.length === 0) {
             await session.abortTransaction();
             session.endSession();
-            return res.status(400).json({ message: "failed", data: "No unclaimed Robux codes available!" });
+                        if (socketid) {
+                io.to(socketid).emit('generate-progress', { 
+                    percentage: 100,
+                    status: 'failed',
+                    success: false
+                });
+            }
+            return 
             }
 
             if (codeamount > temprobuxcodes.length) {
             await session.abortTransaction();
             session.endSession();
-            return res.status(400).json({ message: "failed", data: "Requested Robux code quantity exceeds available quantity!" });
+            if (socketid) {
+                io.to(socketid).emit('generate-progress', { 
+                    percentage: 100,
+                    status: 'failed',
+                    success: false
+                });
             }
+            return             
+        }
 
             for (let i = 0; i < codeamount; i++) {
             const tempcode = temprobuxcodes[i];
@@ -163,13 +172,27 @@ async function handleCodeGeneration(data) {
                 if (!availableTickets || availableTickets.length === 0) {
                     await session.abortTransaction();
                     session.endSession();
-                    return res.status(400).json({ message: "failed", data: "No available tickets!" });
+                if (socketid) {
+                        io.to(socketid).emit('generate-progress', { 
+                            percentage: 100,
+                            status: 'failed',
+                            success: false
+                        });
+                    }
+                    return                 
                 }
 
                 if (codeamount > availableTickets.length) {
                     await session.abortTransaction();
                     session.endSession();
-                    return res.status(400).json({ message: "failed", data: "Requested ticket quantity exceeds available quantity!" });
+                if (socketid) {
+                        io.to(socketid).emit('generate-progress', { 
+                            percentage: 100,
+                            status: 'failed',
+                            success: false
+                        });
+                    }
+                    return                 
                 }
 
                 for (let i = 0; i < codeamount; i++) {
@@ -254,7 +277,14 @@ async function handleCodeGeneration(data) {
         } else {
             await session.abortTransaction();
             session.endSession();
-            return res.status(400).json({ message: "failed", data: "Invalid type!" });
+            if (socketid) {
+                io.to(socketid).emit('generate-progress', { 
+                    percentage: 100,
+                    status: 'failed',
+                    success: false
+                });
+            }
+            return 
         }
 
         if (socketid) {
