@@ -13,7 +13,7 @@ const archiver = require('archiver');
 const { Analytics, RedeemedCodeAnalytics } = require("../models/Analytics");
 
 exports.newgeneratecode = async (req, res) => {
-    const { socketid, expiration, codeamount, items, type, length } = req.body;
+    const { socketid, expiration, codeamount, items, type, length, rarity } = req.body;
 
     if (!expiration || !codeamount || !items) {
         return res.status(400).json({ message: "failed", data: "Please fill in all the required fields!" });
@@ -21,6 +21,9 @@ exports.newgeneratecode = async (req, res) => {
 
     if (codeamount <= 0) {
         return res.status(400).json({ message: "failed", data: "Please enter a valid code amount!" });
+    }
+    if (!rarity || !["common", "uncommon", "rare", "epic", "legendary"].includes(rarity)) {
+        return res.status(400).json({ message: "failed", data: "Please select a valid rarity!" });
     }
 
     if (socketid) {
@@ -94,6 +97,7 @@ exports.newgeneratecode = async (req, res) => {
                     isUsed: false,
                     index: lastCode + i + 1,
                     length: length || 9,
+                    rarity: rarity
                 });
             }
         } else if (type === "ticket") {
@@ -124,6 +128,7 @@ exports.newgeneratecode = async (req, res) => {
                     isUsed: false,
                     index: lastCode + i + 1,
                     length: length || 9,
+                    rarity: rarity
                 });
             }
         } else if (type === "ingame" || type === "exclusive" || type === "chest") {
@@ -143,6 +148,7 @@ exports.newgeneratecode = async (req, res) => {
                         isUsed: false,
                         index: index++,
                         length: length || 9,
+                        rarity: rarity
                     });
                 }
                 
@@ -212,7 +218,7 @@ exports.newgeneratecode = async (req, res) => {
 
 exports.getcodes = async (req, res) => {
 
-    const { page, limit, type, item, status, search } = req.query;
+    const { page, limit, type, rarity, item, status, search } = req.query;
     const pageOptions = {
         page: parseInt(page) || 0,
         limit: parseInt(limit) || 10,
@@ -227,6 +233,9 @@ exports.getcodes = async (req, res) => {
         } else {
             filter.status = status;
         }
+    }
+    if (rarity && ["common", "uncommon", "rare", "epic", "legendary"].includes(rarity)) {
+        filter.rarity = rarity;
     }
     if (search) {
         const searchRegex = new RegExp(search, 'i'); // Case-insensitive search

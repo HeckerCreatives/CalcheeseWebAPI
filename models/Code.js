@@ -70,7 +70,12 @@ const CodeSchema = new mongoose.Schema(
         length: {
             type: Number,
             index: true // Automatically creates an index on 'amount'
-        }
+        },
+        rarity: {
+            type: String,
+            enum: ['common', 'uncommon', 'rare', 'epic', 'legendary'],
+            index: true // Automatically creates an index on 'amount'
+        },
     },
     {
         timestamps: true
