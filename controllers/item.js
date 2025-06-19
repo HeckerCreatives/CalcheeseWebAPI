@@ -144,3 +144,29 @@ exports.deleteItem = async (req, res) => {
 
     return res.json({ message: "success" });
 };
+
+exports.deletemultipleitems = async (req, res) => {
+    const { ids } = req.body;
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ message: "bad-request", data: "Please provide at least one item ID!" });
+    }
+
+    // Check if all items exist
+    const foundItems = await Item.find({ _id: { $in: ids } }).select('_id').lean();
+    const foundIds = foundItems.map(item => item._id.toString());
+    const notFound = ids.filter(id => !foundIds.includes(id));
+
+    if (notFound.length > 0) {
+        return res.status(400).json({ message: "bad-request", data: `Items not found: ${notFound.join(', ')}` });
+    }
+
+    // Delete all items
+    await Item.deleteMany({ _id: { $in: ids } })
+        .catch(err => {
+            console.log(`There's a problem deleting the items. Error ${err}`);
+            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+        });
+
+    return res.json({ message: "success" });
+}
