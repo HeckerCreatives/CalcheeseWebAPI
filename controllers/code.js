@@ -95,6 +95,8 @@ async function handleCodeGeneration(data) {
 
         let codeData = [];
 
+        let tempbatch = 1
+
         if (type === "robux") {
             for (let i = 0; i < codeamount; i++) {
             currentCode = getNextCode(lastCode + i, length || 9);
@@ -199,9 +201,16 @@ async function handleCodeGeneration(data) {
                 try {
                     const batchEnd = Math.min(batchStart + BATCH_SIZE, codeamount);
                     const batchData = [];
+
+                    if (socketid) {
+                        const percentage = Math.round(((batchEnd) / codeamount) * 40) + 50;
+                        io.to(socketid).emit('generate-progress', {
+                            percentage,
+                            status: `Generating code for batch ${tempbatch}. Progress: ${batchEnd.toLocaleString()}/${codeamount.toLocaleString()}`
+                        });
+                    }
                     
                     for (let i = 0; i < (batchEnd - batchStart); i++) {
-                        console.log(i)
                         const currentIndex = startIndex + batchStart + i;
                         const currentCode = getNextCode(currentIndex, length || 9);
                         batchData.push({
@@ -230,9 +239,10 @@ async function handleCodeGeneration(data) {
                         const percentage = Math.round(((batchEnd) / codeamount) * 40) + 50;
                         io.to(socketid).emit('generate-progress', {
                             percentage,
-                            status: `Saving In-Game codes. Progress: ${batchEnd.toLocaleString()}/${codeamount.toLocaleString()}`
+                            status: `Saving In-Game codes for batch ${tempbatch}. Progress: ${batchEnd.toLocaleString()}/${codeamount.toLocaleString()}`
                         });
                     }
+                    tempbatch++
                 } catch (err) {
                     await batchSession.abortTransaction();
                     throw err;
