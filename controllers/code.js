@@ -48,7 +48,6 @@ exports.newgeneratecode = async (req, res) => {
         let lastCode = (totalCodes || 0) + 1;
         let currentCode = lastCode;
 
-        console.log(`Generating ${codeamount} codes starting from index ${lastCode}`);
 
         for (let i = 0; i < codeamount; i++) {
             currentCode = getNextCode(lastCode + i, length || 9);
