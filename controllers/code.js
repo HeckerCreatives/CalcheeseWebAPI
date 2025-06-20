@@ -7,7 +7,7 @@ const { default: mongoose } = require("mongoose");
 const { io } = require('../app');
 const fs = require('fs');
 const path = require('path');
-const { generateRandomString, getNextCode } = require("../utils/codegenerator");
+const { generateRandomString, getNextCode, robuxswitchcase, ticketsswitchcase, ingameswitchcase, exclusiveswitchcase, chestswitchcase } = require("../utils/codegenerator");
 const createCsvWriter = require('csv-writer').createObjectCsvWriter;
 const archiver = require('archiver');
 const { Analytics, RedeemedCodeAnalytics } = require("../models/Analytics");
@@ -220,7 +220,7 @@ async function handleCodeGeneration(data) {
                     });
                 }
         } else if (type === "ingame" || type === "exclusive" || type === "chest") {
-            const BATCH_SIZE = 20000; // Reduced batch size
+            const BATCH_SIZE = 5000; // Reduced batch size
             let startIndex = (lastCode || 0);
             
             for (let batchStart = 0; batchStart < codeamount; batchStart += BATCH_SIZE) {
@@ -252,14 +252,25 @@ async function handleCodeGeneration(data) {
                     }
                     
 
-
+                    
                     // Replace the original line with:
                     await saveWithFallback(batchData);
-                    await Analytics.findOneAndUpdate(
-                        {}, 
-                        { $inc: { totaltoclaim: batchData.length } }, 
-                        { new: true }
-                        );
+                    const analyticsUpdate = { 
+                        $inc: { 
+                            totaltoclaim: batchData.length 
+                        }
+                    };
+
+                    // Count codes by type and rarity
+                        if (type === 'ingame') {
+                            ingameswitchcase(rarity, BATCH_SIZE, analyticsUpdate);
+                        } else if (type === 'exclusive') {
+                            exclusiveswitchcase(rarity, BATCH_SIZE, analyticsUpdate);
+                        } else if (type === 'chest') {
+                            chestswitchcase(rarity, BATCH_SIZE, analyticsUpdate);
+                        }
+
+                    await Analytics.findOneAndUpdate({}, analyticsUpdate, { new: true });
 
 
                     io.emit('generate-progress', {
@@ -289,17 +300,26 @@ async function handleCodeGeneration(data) {
         }
 
         if(type === 'robux' || type === 'ticket') {
-        await Code.insertMany(codeData);
 
-        const update = { 
+            await saveWithFallback(codeData);
+
+            const update = { 
             $inc: { 
                 totaltoclaim: codeamount,
                 totaltogenerate: (type === 'robux' || type === 'ticket') ? -codeamount : 0
             }
-        };  
+            };  
 
+            // Add rarity counts for robux codes
+            if (type === 'robux') {
+                robuxswitchcase(rarity, codeamount, update);
+            }
+            // Add rarity counts for ticket codes
+            if (type === 'ticket') {
+                ticketsswitchcase(rarity, codeamount, update)
+            }
 
-        await Analytics.findOneAndUpdate({}, update, { new: true });
+            await Analytics.findOneAndUpdate({}, update, { new: true });
         }
         
         if (socketid) {
@@ -629,16 +649,8 @@ exports.getcodes = async (req, res) => {
         ];
     }
 
-
-
-    const totalDocs = await Code.countDocuments(filter)
-        .then(data => data)
-        .catch(err => {
-            console.log(`There's a problem getting the codes. Error ${err}`);
-            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
-        });
-
-    const totalPages = Math.ceil(totalDocs / pageOptions.limit);
+    let totalDocs = 0;
+console.time('fetchCodesData');
     const codes = await Code.aggregate([
         {
             $match: filter,
@@ -688,6 +700,9 @@ exports.getcodes = async (req, res) => {
             console.log(`There's a problem getting the codes. Error ${err}`);
             return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
         });
+console.timeEnd('fetchCodesData');
+    
+
 
     const finalData = codes.map(code => {
         const result = {
@@ -743,17 +758,9 @@ exports.getcodes = async (req, res) => {
         return result;
     });
 
-    const expiredCodesCount = await Code.countDocuments({
-        ...filter,
-        expiration: { $lt: new Date() },
-        isUsed: false,
-        status: { $nin: ["approved", "claimed"] }
-    })        
-        .then(data => data)
-        .catch(err => {
-            console.log(`There's a problem getting the expired codes count. Error ${err}`);
-            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
-        });
+
+        
+console.time('fetchAnalyticsData');
 
     const AnalyticsData = await Analytics.findOne({})
         .then(data => data)
@@ -761,31 +768,206 @@ exports.getcodes = async (req, res) => {
             console.log(`There's a problem getting the analytics data. Error ${err}`);
             return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
         });
+console.timeEnd('fetchAnalyticsData');
 
-        if (expiredCodesCount > 0) {
-            if (AnalyticsData.totalexpired !== expiredCodesCount) {
-                const diff = expiredCodesCount - (AnalyticsData.totalexpired || 0);
-                await Analytics.findOneAndUpdate(
-                    {},
-                    { 
-                        $set: { totalexpired: expiredCodesCount },
-                        $inc: { totaltoclaim: -diff }
-                    },
-                    { new: true }
-                )
-                .then(data => data)
-                .catch(err => {
-                    console.log(`There's a problem updating the analytics. Error ${err}`);
-                    return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
-                });
+console.time('switchBlock');
+
+            if (filter.type) {
+                switch(filter.type) {
+                    case 'ingame':
+                        console.log('Checking ingame codes...');
+                        if (filter.rarity) {
+                            console.log('Checking ingame rarity:', filter.rarity);
+                            switch(filter.rarity) {
+                                case 'common': 
+                                    console.log('Found ingame common:', AnalyticsData.totalingamecommon);
+                                    totalDocs = AnalyticsData.totalingamecommon || 0; 
+                                    break;
+                                case 'uncommon': 
+                                    console.log('Found ingame uncommon:', AnalyticsData.totalingameuncommon);
+                                    totalDocs = AnalyticsData.totalingameuncommon || 0; 
+                                    break;
+                                case 'rare': 
+                                    console.log('Found ingame rare:', AnalyticsData.totalingamerare);
+                                    totalDocs = AnalyticsData.totalingamerare || 0; 
+                                    break;
+                                case 'epic': 
+                                    console.log('Found ingame epic:', AnalyticsData.totalingameepic);
+                                    totalDocs = AnalyticsData.totalingameepic || 0; 
+                                    break;
+                                case 'legendary': 
+                                    console.log('Found ingame legendary:', AnalyticsData.totalingamelegendary);
+                                    totalDocs = AnalyticsData.totalingamelegendary || 0; 
+                                    break;
+                            }
+                        } else {
+                            console.log('Calculating total ingame codes...');
+                            totalDocs = (AnalyticsData.totalingamecommon + 
+                                       AnalyticsData.totalingameuncommon + 
+                                       AnalyticsData.totalingamerare + 
+                                       AnalyticsData.totalingameepic + 
+                                       AnalyticsData.totalingamelegendary) || 0;
+                            console.log('Total ingame codes:', totalDocs);
+                        }
+                        break;
+                    case 'exclusive':
+                        console.log('Checking exclusive codes...');
+                        if (filter.rarity) {
+                            console.log('Checking exclusive rarity:', filter.rarity);
+                            switch(filter.rarity) {
+                                case 'common': 
+                                    console.log('Found exclusive common:', AnalyticsData.totalexclusivecommon);
+                                    totalDocs = AnalyticsData.totalexclusivecommon || 0; 
+                                    break;
+                                case 'uncommon': 
+                                    console.log('Found exclusive uncommon:', AnalyticsData.totalexclusiveuncommon);
+                                    totalDocs = AnalyticsData.totalexclusiveuncommon || 0; 
+                                    break;
+                                case 'rare': 
+                                    console.log('Found exclusive rare:', AnalyticsData.totalexclusiverare);
+                                    totalDocs = AnalyticsData.totalexclusiverare || 0; 
+                                    break;
+                                case 'epic': 
+                                    console.log('Found exclusive epic:', AnalyticsData.totalexclusiveepic);
+                                    totalDocs = AnalyticsData.totalexclusiveepic || 0; 
+                                    break;
+                                case 'legendary': 
+                                    console.log('Found exclusive legendary:', AnalyticsData.totalexclusivelegendary);
+                                    totalDocs = AnalyticsData.totalexclusivelegendary || 0; 
+                                    break;
+                            }
+                        } else {
+                            console.log('Calculating total exclusive codes...');
+                            totalDocs = (AnalyticsData.totalexclusivecommon + 
+                                       AnalyticsData.totalexclusiveuncommon + 
+                                       AnalyticsData.totalexclusiverare + 
+                                       AnalyticsData.totalexclusiveepic + 
+                                       AnalyticsData.totalexclusivelegendary) || 0;
+                            console.log('Total exclusive codes:', totalDocs);
+                        }
+                        break;
+                    case 'chest':
+                        console.log('Checking chest codes...');
+                        if (filter.rarity) {
+                            console.log('Checking chest rarity:', filter.rarity);
+                            switch(filter.rarity) {
+                                case 'common': 
+                                    console.log('Found chest common:', AnalyticsData.totalchestcommon);
+                                    totalDocs = AnalyticsData.totalchestcommon || 0; 
+                                    break;
+                                case 'uncommon': 
+                                    console.log('Found chest uncommon:', AnalyticsData.totalchestuncommon);
+                                    totalDocs = AnalyticsData.totalchestuncommon || 0; 
+                                    break;
+                                case 'rare': 
+                                    console.log('Found chest rare:', AnalyticsData.totalchestrare);
+                                    totalDocs = AnalyticsData.totalchestrare || 0; 
+                                    break;
+                                case 'epic': 
+                                    console.log('Found chest epic:', AnalyticsData.totalchestepic);
+                                    totalDocs = AnalyticsData.totalchestepic || 0; 
+                                    break;
+                                case 'legendary': 
+                                    console.log('Found chest legendary:', AnalyticsData.totalchestlegendary);
+                                    totalDocs = AnalyticsData.totalchestlegendary || 0; 
+                                    break;
+                            }
+                        } else {
+                            console.log('Calculating total chest codes...');
+                            totalDocs = (AnalyticsData.totalchestcommon + 
+                                       AnalyticsData.totalchestuncommon + 
+                                       AnalyticsData.totalchestrare + 
+                                       AnalyticsData.totalchestepic + 
+                                       AnalyticsData.totalchestlegendary) || 0;
+                            console.log('Total chest codes:', totalDocs);
+                        }
+                        break;
+                    case 'robux':
+                        console.log('Checking robux codes...');
+                        if (filter.rarity) {
+                            console.log('Checking robux rarity:', filter.rarity);
+                            switch(filter.rarity) {
+                                case 'common': 
+                                    console.log('Found robux common:', AnalyticsData.totalrobuxcommon);
+                                    totalDocs = AnalyticsData.totalrobuxcommon || 0; 
+                                    break;
+                                case 'uncommon': 
+                                    console.log('Found robux uncommon:', AnalyticsData.totalrobuxuncommon);
+                                    totalDocs = AnalyticsData.totalrobuxuncommon || 0; 
+                                    break;
+                                case 'rare': 
+                                    console.log('Found robux rare:', AnalyticsData.totalrobuxrare);
+                                    totalDocs = AnalyticsData.totalrobuxrare || 0; 
+                                    break;
+                                case 'epic': 
+                                    console.log('Found robux epic:', AnalyticsData.totalrobuxepic);
+                                    totalDocs = AnalyticsData.totalrobuxepic || 0; 
+                                    break;
+                                case 'legendary': 
+                                    console.log('Found robux legendary:', AnalyticsData.totalrobuxlegendary);
+                                    totalDocs = AnalyticsData.totalrobuxlegendary || 0; 
+                                    break;
+                            }
+                        } else {
+                            console.log('Calculating total robux codes...');
+                            totalDocs = (AnalyticsData.totalrobuxcommon + 
+                                       AnalyticsData.totalrobuxuncommon + 
+                                       AnalyticsData.totalrobuxrare + 
+                                       AnalyticsData.totalrobuxepic + 
+                                       AnalyticsData.totalrobuxlegendary) || 0;
+                            console.log('Total robux codes:', totalDocs);
+                        }
+                        break;
+                    case 'ticket':
+                        console.log('Checking ticket codes...');
+                        if (filter.rarity) {
+                            console.log('Checking ticket rarity:', filter.rarity);
+                            switch(filter.rarity) {
+                                case 'common': 
+                                    console.log('Found ticket common:', AnalyticsData.totalticketcommon);
+                                    totalDocs = AnalyticsData.totalticketcommon || 0; 
+                                    break;
+                                case 'uncommon': 
+                                    console.log('Found ticket uncommon:', AnalyticsData.totalticketuncommon);
+                                    totalDocs = AnalyticsData.totalticketuncommon || 0; 
+                                    break;
+                                case 'rare': 
+                                    console.log('Found ticket rare:', AnalyticsData.totalticketrare);
+                                    totalDocs = AnalyticsData.totalticketrare || 0; 
+                                    break;
+                                case 'epic': 
+                                    console.log('Found ticket epic:', AnalyticsData.totalticketepic);
+                                    totalDocs = AnalyticsData.totalticketepic || 0; 
+                                    break;
+                                case 'legendary': 
+                                    console.log('Found ticket legendary:', AnalyticsData.totalticketlegendary);
+                                    totalDocs = AnalyticsData.totalticketlegendary || 0; 
+                                    break;
+                            }
+                        }
+                    default:
+                        console.log('Using default total calculation');
+                        totalDocs = (AnalyticsData.totalclaimed + AnalyticsData.totalapproved + AnalyticsData.totaltoclaim + AnalyticsData.totalexpired) || 0;
+                        console.log('Total docs:', totalDocs);
+                }
+            } else {
+                console.log('No type filter, using overall totals');
+                totalDocs = (AnalyticsData.totalclaimed + 
+                             AnalyticsData.totalapproved + 
+                             AnalyticsData.totaltoclaim + 
+                             AnalyticsData.totalexpired) || 0;
+                console.log('Total docs:', totalDocs);
             }
-        }
+console.timeEnd('switchBlock');
+        const totalPages = Math.ceil(totalDocs / pageOptions.limit);
+
+
+
     return res.json({
         message: "success",
         data: finalData,
         totalPages,
         totalDocs,
-        expiredCodesCount,
     });
 }
 
@@ -1202,10 +1384,9 @@ exports.deletecode = async (req, res) => {
 
 
 exports.exportCodesCSV = async (req, res) => {
-
-        try {
-        const { type, item, status, dateRange, start, end } = req.query;
-        const CHUNK_SIZE = parseInt(end) || 1000000; // Default 1 million per file
+    try {
+        const { type, item, status, dateRange, start, end, socketid } = req.query;
+        const CHUNK_SIZE = 1000000; // Default 1 million per file
 
         // Build filter
         const filter = {};
@@ -1229,11 +1410,7 @@ exports.exportCodesCSV = async (req, res) => {
         const startIndex = Math.max(parseInt(start) || 1, 1) - 1; // 0-based index
         const endIndex = parseInt(end) || (startIndex + 10000000);
         const limit = endIndex - startIndex;
-        // Get only the code field for the matching documents
-        const totalDocs = await Code.countDocuments(filter);
-        if (totalDocs === 0) {
-            return res.status(404).json({ message: "No codes found matching the criteria" });
-        }
+
         const uploadsDir = path.join(__dirname, '../uploads');
         if (!fs.existsSync(uploadsDir)){
             fs.mkdirSync(uploadsDir, { recursive: true });
@@ -1243,65 +1420,80 @@ exports.exportCodesCSV = async (req, res) => {
         const headers = [
             { id: 'code', title: 'Code' },
         ];
-        let batch = 0
+        let batch = 0;
         let fileList = [];
-        for (let skip = 0, fileNum = 1; skip < 5000000; skip += CHUNK_SIZE, fileNum++) {
-            const codes = await Code.find(filter)
-                .select('code')
-                .sort({ createdAt: -1 })
-                .skip(skip)
-                .limit(CHUNK_SIZE)
-                .lean();
+        let totalExported = 0;
+        let totalToExport = await Code.countDocuments(filter);
 
-            const csvData = codes.map(code => ({
-                code: code.code,
-            }));
+        // Immediately return success to client
+        res.json({ message: "success", status: "export-started" });
 
-            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-            const filename = `codes_export_${timestamp}_part${fileNum}.csv`;
-            const filepath = path.join(uploadsDir, filename);
+        // Start export in background
+        (async () => {
+            for (let skip = startIndex, fileNum = 1; skip < endIndex && skip < totalToExport; skip += CHUNK_SIZE, fileNum++) {
+                const codes = await Code.find(filter)
+                    .select('code')
+                    .sort({ createdAt: -1 })
+                    .skip(skip)
+                    .limit(CHUNK_SIZE)
+                    .lean();
 
-            const csvWriter = createCsvWriter({
-                path: filepath,
-                header: headers
-            });
+                const csvData = codes.map(code => ({
+                    code: code.code,
+                }));
 
-            await csvWriter.writeRecords(csvData);
-            
-            fileList.push(filename);
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+                const filename = `codes_export_${timestamp}_part${fileNum}.csv`;
+                const filepath = path.join(uploadsDir, filename);
 
-            console.log(`batch ${batch}`)
-            batch++;
-        }
+                const csvWriter = createCsvWriter({
+                    path: filepath,
+                    header: headers
+                });
 
+                await csvWriter.writeRecords(csvData);
+                fileList.push(filename);
 
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const zipFilename = `codes_export_${timestamp}.zip`;
-        const zipPath = path.join(uploadsDir, zipFilename);
-        const output = fs.createWriteStream(zipPath);
-        const archive = archiver('zip', { zlib: { level: 9 } });
-
-        output.on('close', () => {
-            res.download(zipPath, zipFilename, (err) => {
-                if (err) {
-                    console.log('Error downloading zip:', err);
-                    return res.status(500).json({ message: "Error generating ZIP" });
+                totalExported += codes.length;
+                if (socketid) {
+                    io.to(socketid).emit('export-progress', {
+                        percentage: Math.round((totalExported / totalToExport) * 100),
+                        status: `Exported ${totalExported} of ${totalToExport} codes...`
+                    });
                 }
-                fs.unlinkSync(zipPath); // optional: delete zip after download
-                // Optionally, also delete the CSV files here if you want
+                batch++;
+            }
+
+            // Create ZIP
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const zipFilename = `codes_export_${timestamp}.zip`;
+            const zipPath = path.join(uploadsDir, zipFilename);
+            const output = fs.createWriteStream(zipPath);
+            const archive = archiver('zip', { zlib: { level: 9 } });
+
+            output.on('close', () => {
+                // Send file link via socket
+                if (socketid) {
+                    io.to(socketid).emit('export-complete', {
+                        status: 'complete',
+                        file: `/uploads/${zipFilename}`,
+                        message: 'Export complete. Click to download.'
+                    });
+                }
+                // Optionally, delete CSV files after zipping
                 fileList.forEach(filename => {
                     const filePath = path.join(uploadsDir, filename);
                     if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
                 });
             });
-        });
 
-        archive.pipe(output);
-        fileList.forEach(filename => {
-            archive.file(path.join(uploadsDir, filename), { name: filename });
-        });
-        archive.finalize();
-        
+            archive.pipe(output);
+            fileList.forEach(filename => {
+                archive.file(path.join(uploadsDir, filename), { name: filename });
+            });
+            archive.finalize();
+        })();
+
     } catch (err) {
         console.log(`Error exporting codes to CSV: ${err}`);
         return res.status(500).json({ 
@@ -1310,7 +1502,6 @@ exports.exportCodesCSV = async (req, res) => {
         });
     }
 };
-
 
 exports.editmultiplecodes = async (req, res) => {
 

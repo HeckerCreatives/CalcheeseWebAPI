@@ -64,3 +64,129 @@ exports.getNextCode = (index, length ) => {
     if (typeof index !== 'number') return indexToComplexCode(0, length);
     return indexToComplexCode(index + 1, length);
 };
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// #region SWITCH CHASE UTILITIES
+
+exports.robuxswitchcase = (rarity, codeamount, update) => {
+    switch(rarity) {
+        case 'common':
+        update.$inc.totalrobuxcommon = codeamount;
+        break;
+        case 'uncommon':
+        update.$inc.totalrobuxuncommon = codeamount; 
+        break;
+        case 'rare':
+        update.$inc.totalrobuxrare = codeamount;
+        break;
+        case 'epic':
+        update.$inc.totalrobuxepic = codeamount;
+        break;
+        case 'legendary':
+        update.$inc.totalrobuxlegendary = codeamount;
+        break;
+    }   
+}
+
+exports.ticketsswitchcase = (rarity, codeamount, update) => {
+    switch(rarity) {
+        case 'common':
+        update.$inc.totalticketcommon = codeamount;
+        break;
+        case 'uncommon':
+        update.$inc.totalticketuncommon = codeamount; 
+        break;
+        case 'rare':
+        update.$inc.totalticketrare = codeamount;
+        break;
+        case 'epic':
+        update.$inc.totalticketepic = codeamount;
+        break;
+        case 'legendary':
+        update.$inc.totalticketlegendary = codeamount;
+        break;
+    }   
+}
+
+exports.chestswitchcase = (rarity, codeamount, update) => {
+    switch(rarity) {
+        case 'common':
+        update.$inc.totalchestcommon = codeamount;
+        break;
+        case 'uncommon':
+        update.$inc.totalchestuncommon = codeamount; 
+        break;
+        case 'rare':
+        update.$inc.totalchestrare = codeamount;
+        break;
+        case 'epic':
+        update.$inc.totalchestepic = codeamount;
+        break;
+        case 'legendary':
+        update.$inc.totalchestlegendary = codeamount;
+        break;
+    }   
+}
+
+exports.ingameswitchcase = (rarity, codeamount, update) => {
+    switch(rarity) {
+        case 'common':
+        update.$inc.totalingamecommon = codeamount;
+        break;
+        case 'uncommon':
+        update.$inc.totalingameuncommon = codeamount; 
+        break;
+        case 'rare':
+        update.$inc.totalingamerare = codeamount;
+        break;
+        case 'epic':
+        update.$inc.totalingameepic = codeamount;
+        break;
+        case 'legendary':
+        update.$inc.totalingamelegendary = codeamount;
+        break;
+    }   
+}
+
+exports.exclusiveswitchcase = (rarity, codeamount, update) => {
+    switch(rarity) {
+        case 'common':
+        update.$inc.totalexclusivecommon = codeamount;
+        break;
+        case 'uncommon':
+        update.$inc.totalexclusiveuncommon = codeamount; 
+        break;
+        case 'rare':
+        update.$inc.totalexclusiverare = codeamount;
+        break;
+        case 'epic':
+        update.$inc.totalexclusiveepic = codeamount;
+        break;
+        case 'legendary':
+        update.$inc.totalexclusivelegendary = codeamount;
+        break;
+    }   
+}
