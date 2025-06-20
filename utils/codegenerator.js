@@ -1,7 +1,7 @@
 const allowedChars = "ACDEFHJKLMNPRTUVXWY379";
 const crypto = require('crypto');
 
-function getNextCode(index, length = 9) {
+exports.getNextCode = (index, length = 9) => {
     if (length < 7 || length > 12) throw new Error("Code length must be between 7 and 12");
 
     // Create a hash from the index
@@ -17,7 +17,6 @@ function getNextCode(index, length = 9) {
     return code;
 }
 
-module.exports = { getNextCode };
 
 // const allowedChars = "ACDEFHJKLMNPRTUVXWY379";
 
