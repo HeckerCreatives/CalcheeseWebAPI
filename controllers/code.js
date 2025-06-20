@@ -11,6 +11,7 @@ const { generateRandomString, getNextCode, robuxswitchcase, ticketsswitchcase, i
 const createCsvWriter = require('csv-writer').createObjectCsvWriter;
 const archiver = require('archiver');
 const { Analytics, RedeemedCodeAnalytics } = require("../models/Analytics");
+const crypto = require('crypto');
 
 const CHARSET = 'ACDEFHJKLMNPRTUVXWY379';
 const CODE_LENGTH = 9;
