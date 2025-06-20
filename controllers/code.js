@@ -990,7 +990,7 @@ exports.getcodes = async (req, res) => {
 
 
 exports.checkcode = async (req, res) => {
-  const { code } = req.body;
+  const { code, username } = req.body;
 
   if (!code)
     return res.status(400).json({
@@ -1032,10 +1032,39 @@ exports.checkcode = async (req, res) => {
         data: "Code is not available!",
       });
 
+    if (codeExists.type === 'exclusive' || codeExists.type === 'ingame' || codeExists.type === 'chest') {
+      if (!username)
+        return res.status(400).json({
+          message: "bad-request",
+          data: "Please provide a username!",
+        });
+
+      // Check if the user has already redeemed this type of code
+      const existingRedeem = await Code.findOne({
+        type: codeExists.type,
+        isUsed: true,
+        username: username,
+      });
+
+      if (existingRedeem)
+        return res.status(400).json({
+          message: "bad-request",
+          data: `You have already redeemed a ${codeExists.type} code!`,
+        });
+    }
     return res.json({
       message: "success",
       data: {
-        ...codeExists.toObject(),
+        code: codeExists.code,
+        type: codeExists.type,
+        rarity: codeExists.rarity,
+        items: codeExists.items.map(item => ({
+            id: item._id,
+            itemid: item.itemid,
+            itemname: item.itemname,
+            quantity: item.quantity || 0,
+            rarity: item.rarity || "none",
+            })),
       },
     });
 
