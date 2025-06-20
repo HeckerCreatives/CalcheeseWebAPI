@@ -1530,15 +1530,6 @@ exports.editmultiplecodes = async (req, res) => {
         });
     }
 
-        const robuxCodes = await Code.find({ _id: { $in: ids }, type: "robux" })
-        .then(data => data)
-        .catch(err => {
-        console.log(`There's a problem checking robux codes. Error ${err}`);
-        return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
-        });
-        
-        const robuxIds = robuxCodes.map(code => code.robuxcode)
-            .filter(id => id);
 
         const ticketCodes = await Code.find({ _id: { $in: ids }, type: "ticket" })
             .then(data => data)
@@ -1577,35 +1568,6 @@ exports.editmultiplecodes = async (req, res) => {
                 data: `You can only assign up to ${availableTickets} tickets at a time!` 
             });
         }
-    } else if (type && type.toLowerCase() === 'robux') {
-        // check available robux codes
-
-
-        
-        console.log(`Robux IDs to check:`, robuxIds);
-
-        const availableRobuxCodes = await RobuxCode.countDocuments({ 
-            status: { $in: ["to-generate", "to-claim"] }, 
-            _id: { $nin: robuxIds } 
-        })
-            .then(data => data)
-            .catch(err => {
-            console.log(`There's a problem checking available robux codes. Error ${err}`);
-            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
-            });
-        if (availableRobuxCodes <= 0) {
-            return res.status(400).json({ 
-                message: "bad-request", 
-                data: "No available robux codes to assign! Please generate more robux codes." 
-            });
-        }
-
-        if (ids.length > availableRobuxCodes) {
-            return res.status(400).json({ 
-                message: "bad-request", 
-                data: `You can only assign up to ${availableRobuxCodes} robux codes at a time!` 
-            });
-        }
     } 
 
     if (Object.keys(updatedata).length === 0) {
@@ -1629,9 +1591,6 @@ exports.editmultiplecodes = async (req, res) => {
 
     // After update, restore robux/ticket status if needed
     for (const code of originalCodes) {
-        if (code.type === "robux" && (updatedata.type && updatedata.type !== "robux" || updatedata.robuxcode === null || updatedata.robuxcode === undefined) && code.robuxcode) {
-            await RobuxCode.findByIdAndUpdate(code.robuxcode, { status: "to-generate" });
-        }
         if (code.type === "ticket" && (updatedata.type && updatedata.type !== "ticket" || updatedata.ticket === null || updatedata.ticket === undefined) && code.ticket) {
             await Ticket.findByIdAndUpdate(code.ticket, { status: "to-generate" });
         }
