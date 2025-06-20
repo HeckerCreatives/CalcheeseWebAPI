@@ -1470,14 +1470,14 @@ exports.exportCodesCSV = async (req, res) => {
 
             output.on('close', () => {
                 // Send file link via socket
+                // Optionally, delete CSV files after zipping
                 if (socketid) {
-                    io.to(socketid).emit('export-complete', {
+                    io.to(socketid).emit('export-progress', {
                         status: 'complete',
                         file: `/uploads/${zipFilename}`,
                         message: 'Export complete. Click to download.'
                     });
                 }
-                // Optionally, delete CSV files after zipping
                 fileList.forEach(filename => {
                     const filePath = path.join(uploadsDir, filename);
                     if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
