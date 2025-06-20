@@ -650,7 +650,6 @@ exports.getcodes = async (req, res) => {
     }
 
     let totalDocs = 0;
-console.time('fetchCodesData');
     const codes = await Code.aggregate([
         {
             $match: filter,
@@ -700,7 +699,6 @@ console.time('fetchCodesData');
             console.log(`There's a problem getting the codes. Error ${err}`);
             return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
         });
-console.timeEnd('fetchCodesData');
     
 
 
@@ -760,7 +758,6 @@ console.timeEnd('fetchCodesData');
 
 
         
-console.time('fetchAnalyticsData');
 
     const AnalyticsData = await Analytics.findOne({})
         .then(data => data)
@@ -768,9 +765,7 @@ console.time('fetchAnalyticsData');
             console.log(`There's a problem getting the analytics data. Error ${err}`);
             return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
         });
-console.timeEnd('fetchAnalyticsData');
 
-console.time('switchBlock');
 
             if (filter.type) {
                 switch(filter.type) {
@@ -958,7 +953,6 @@ console.time('switchBlock');
                              AnalyticsData.totalexpired) || 0;
                 console.log('Total docs:', totalDocs);
             }
-console.timeEnd('switchBlock');
         const totalPages = Math.ceil(totalDocs / pageOptions.limit);
 
 
@@ -1425,17 +1419,20 @@ exports.exportCodesCSV = async (req, res) => {
         let totalExported = 0;
         let totalToExport = await Code.countDocuments(filter);
 
+        console.log(`Total codes to export: ${totalToExport}`);
         // Immediately return success to client
         res.json({ message: "success", status: "export-started" });
 
         // Start export in background
         (async () => {
-            for (let skip = start, fileNum = 1; skip < end && skip < totalToExport; fileNum++) {
+            for (let skip = start, fileNum = 1; skip < end && skip < totalToExport; skip += CHUNK_SIZE, fileNum++) {
+                 const currentLimit = Math.min(CHUNK_SIZE, end - skip, totalToExport - skip);
+                if (currentLimit <= 0) break;
                 const codes = await Code.find(filter)
                     .select('code')
                     .sort({ createdAt: -1 })
                     .skip(skip)
-                    .limit(end - start)
+                    .limit(currentLimit)
                     .lean();
 
                 const csvData = codes.map(code => ({
