@@ -1407,9 +1407,9 @@ exports.exportCodesCSV = async (req, res) => {
             }
         }
 
-        const startIndex = Math.max(parseInt(start) || 1, 1) - 1; // 0-based index
-        const endIndex = parseInt(end) || (startIndex + 10000000);
-        const limit = endIndex - startIndex;
+        // const startIndex = Math.max(parseInt(start) || 1, 1) - 1; // 0-based index
+        // const endIndex = parseInt(end) || (startIndex + 10000000);
+        // const limit = endIndex - startIndex;
 
         const uploadsDir = path.join(__dirname, '../uploads');
         if (!fs.existsSync(uploadsDir)){
@@ -1430,7 +1430,7 @@ exports.exportCodesCSV = async (req, res) => {
 
         // Start export in background
         (async () => {
-            for (let skip = startIndex, fileNum = 1; skip < endIndex && skip < totalToExport; skip += CHUNK_SIZE, fileNum++) {
+            for (let skip = start, fileNum = 1; skip < end && skip < totalToExport; skip += CHUNK_SIZE, fileNum++) {
                 const codes = await Code.find(filter)
                     .select('code')
                     .sort({ createdAt: -1 })
@@ -1540,9 +1540,35 @@ exports.editmultiplecodes = async (req, res) => {
         });
     }
 
+        const robuxCodes = await Code.find({ _id: { $in: ids }, type: "robux" })
+        .then(data => data)
+        .catch(err => {
+        console.log(`There's a problem checking robux codes. Error ${err}`);
+        return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+        });
+        
+        const robuxIds = robuxCodes.map(code => code.robuxcode)
+            .filter(id => id);
+
+        const ticketCodes = await Code.find({ _id: { $in: ids }, type: "ticket" })
+            .then(data => data)
+            .catch(err => {
+            console.log(`There's a problem checking ticket codes. Error ${err}`);
+            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+            });
+            
+        const ticketIds = ticketCodes.map(code => code.ticket).filter(id => id);
+
+
     if (type && type.toLowerCase() === 'ticket') {
         // check available tickets
-        const availableTickets = await Ticket.countDocuments({ status: "to-generate" })
+
+        //check if in ids there's a code that has a ticket
+
+        
+        const availableTickets = await Ticket.countDocuments({ 
+        status: { $in: ["to-generate", "to-claim"] },
+        _id: { $nin: ticketIds } })
             .then(data => data)
             .catch(err => {
                 console.log(`There's a problem checking available tickets. Error ${err}`);
@@ -1563,11 +1589,19 @@ exports.editmultiplecodes = async (req, res) => {
         }
     } else if (type && type.toLowerCase() === 'robux') {
         // check available robux codes
-        const availableRobuxCodes = await RobuxCode.countDocuments({ status: "to-generate" })
+
+
+        
+        console.log(`Robux IDs to check:`, robuxIds);
+
+        const availableRobuxCodes = await RobuxCode.countDocuments({ 
+            status: { $in: ["to-generate", "to-claim"] }, 
+            _id: { $nin: robuxIds } 
+        })
             .then(data => data)
             .catch(err => {
-                console.log(`There's a problem checking available robux codes. Error ${err}`);
-                return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+            console.log(`There's a problem checking available robux codes. Error ${err}`);
+            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
             });
         if (availableRobuxCodes <= 0) {
             return res.status(400).json({ 
@@ -1591,6 +1625,7 @@ exports.editmultiplecodes = async (req, res) => {
         });
     }
 
+    const originalCodes = await Code.find({ _id: { $in: ids } });
 
     await Code.updateMany(
         { _id: { $in: ids } },
@@ -1601,6 +1636,16 @@ exports.editmultiplecodes = async (req, res) => {
             console.log(`There's a problem updating the codes. Error ${err}`);
             return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
         });
+
+    // After update, restore robux/ticket status if needed
+    for (const code of originalCodes) {
+        if (code.type === "robux" && (updatedata.type && updatedata.type !== "robux" || updatedata.robuxcode === null || updatedata.robuxcode === undefined) && code.robuxcode) {
+            await RobuxCode.findByIdAndUpdate(code.robuxcode, { status: "to-generate" });
+        }
+        if (code.type === "ticket" && (updatedata.type && updatedata.type !== "ticket" || updatedata.ticket === null || updatedata.ticket === undefined) && code.ticket) {
+            await Ticket.findByIdAndUpdate(code.ticket, { status: "to-generate" });
+        }
+    }
 
     return res.json({
         message: "success",
