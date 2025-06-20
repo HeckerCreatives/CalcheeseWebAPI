@@ -648,7 +648,6 @@ exports.getcodes = async (req, res) => {
             { "ticket.ticketid": searchRegex }
         ];
     }
-
     let totalDocs = 0;
     const codes = await Code.aggregate([
         {
@@ -700,7 +699,6 @@ exports.getcodes = async (req, res) => {
             return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
         });
     
-
 
     const finalData = codes.map(code => {
         const result = {
@@ -756,9 +754,7 @@ exports.getcodes = async (req, res) => {
         return result;
     });
 
-
         
-
     const AnalyticsData = await Analytics.findOne({})
         .then(data => data)
         .catch(err => {
@@ -1417,23 +1413,39 @@ exports.exportCodesCSV = async (req, res) => {
         let batch = 0;
         let fileList = [];
         let totalExported = 0;
-        let totalToExport = await Code.countDocuments(filter);
+        let totalToExport = end - start;
 
-        console.log(`Total codes to export: ${totalToExport}`);
         // Immediately return success to client
         res.json({ message: "success", status: "export-started" });
 
         // Start export in background
         (async () => {
-            for (let skip = start, fileNum = 1; skip < end && skip < totalToExport; skip += CHUNK_SIZE, fileNum++) {
-                 const currentLimit = Math.min(CHUNK_SIZE, end - skip, totalToExport - skip);
+            let batchOffset = 0;
+            for (let fileNum = 1; batchOffset < (end - start); fileNum++) {
+                const currentLimit = Math.min(CHUNK_SIZE, end - start - batchOffset);
                 if (currentLimit <= 0) break;
+
+                console.log(`Exporting batch ${fileNum} with limit ${currentLimit}...`);
+
+                const batchProgress = (batchOffset / (end - start));
+                const percentage1 = Math.round(20 + (batchProgress * 30));
+                io.emit('export-progress', {
+                    percentage: percentage1,
+                    status: `Fetching data for batch ${fileNum}...`
+                });
+
                 const codes = await Code.find(filter)
                     .select('code')
-                    .sort({ createdAt: -1 })
-                    .skip(skip)
+                    .sort({ index: -1 })
+                    .skip(start + batchOffset)
                     .limit(currentLimit)
                     .lean();
+
+                const percentage2 = Math.round(50 + (batchProgress * 30));
+                io.emit('export-progress', {
+                    percentage: percentage2, 
+                    status: `Processing data for batch ${fileNum}...`
+                });
 
                 const csvData = codes.map(code => ({
                     code: code.code,
@@ -1449,18 +1461,22 @@ exports.exportCodesCSV = async (req, res) => {
                 });
 
                 await csvWriter.writeRecords(csvData);
-                fileList.push(filename);
-
                 totalExported += codes.length;
-                if (socketid) {
-                    io.to(socketid).emit('export-progress', {
-                        percentage: Math.round((totalExported / totalToExport) * 100),
-                        status: `Exported ${totalExported} of ${totalToExport} codes...`
-                    });
-                }
-                batch++;
-            }
 
+                const percentage3 = Math.round(80 + (batchProgress * 20));
+                io.emit('export-progress', {
+                    percentage: percentage3,
+                    status: `Saving batch ${fileNum} (${totalExported.toLocaleString()} of ${totalToExport.toLocaleString()} codes)...`
+                });
+
+                fileList.push(filename);
+                batchOffset += CHUNK_SIZE;
+            }
+                io.emit('export-progress', {
+                    percentage: 100,
+                    status: `Creating ZIP archive with ${fileList.length} files...`
+                });
+            
             // Create ZIP
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
             const zipFilename = `codes_export_${timestamp}.zip`;
@@ -1471,13 +1487,13 @@ exports.exportCodesCSV = async (req, res) => {
             output.on('close', () => {
                 // Send file link via socket
                 // Optionally, delete CSV files after zipping
-                if (socketid) {
-                    io.to(socketid).emit('export-progress', {
+                    io.emit('export-progress', {
+                        percentage: 100,
                         status: 'complete',
                         file: `/uploads/${zipFilename}`,
                         message: 'Export complete. Click to download.'
                     });
-                }
+
                 fileList.forEach(filename => {
                     const filePath = path.join(uploadsDir, filename);
                     if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
