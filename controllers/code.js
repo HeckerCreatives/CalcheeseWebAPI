@@ -1386,7 +1386,7 @@ exports.deletecode = async (req, res) => {
 exports.exportCodesCSV = async (req, res) => {
     try {
         const { type, item, status, dateRange, start, end, socketid } = req.query;
-        const CHUNK_SIZE = (end - start) || 1000000; // Default 1 million per file
+        const CHUNK_SIZE = 500000; // Default 1 million per file
 
         // Build filter
         const filter = {};
@@ -1430,12 +1430,12 @@ exports.exportCodesCSV = async (req, res) => {
 
         // Start export in background
         (async () => {
-            for (let skip = start, fileNum = 1; skip < end && skip < totalToExport; skip += CHUNK_SIZE, fileNum++) {
+            for (let skip = start, fileNum = 1; skip < end && skip < totalToExport; fileNum++) {
                 const codes = await Code.find(filter)
                     .select('code')
                     .sort({ createdAt: -1 })
                     .skip(skip)
-                    .limit(CHUNK_SIZE)
+                    .limit(end - start)
                     .lean();
 
                 const csvData = codes.map(code => ({
