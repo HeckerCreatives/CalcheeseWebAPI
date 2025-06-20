@@ -118,58 +118,7 @@ async function handleCodeGeneration(data) {
         let codeData = [];
 
         let tempbatch = 1
-
-        if (type === "robux") {
-            for (let i = 0; i < codeamount; i++) {
-            currentCode = getNextCode(lastCode + i, length || 9);
-            codes.push(currentCode);
-
-            if (i % Math.max(1, Math.floor(codeamount / 10)) === 0) {
-                const percentage = Math.round((i / codeamount) * 80) + 10;
-                io.emit('generate-progress', { 
-                    percentage,
-                    status: `Generating code patterns... ${i}/${codeamount}`
-                });
-            }
-            }
-            
-            const temprobuxcodes = await RobuxCode.find({ status: "to-generate" });
-            if (!temprobuxcodes || temprobuxcodes.length === 0) {
-            io.emit('generate-progress', { 
-                percentage: 100,
-                status: 'failed',
-                success: false
-            });
-            return 
-            }
-
-            if (codeamount > temprobuxcodes.length) {
-                io.emit('generate-progress', { 
-                    percentage: 100,
-                    status: 'failed',
-                    success: false
-                });
-            return             
-        }
-
-            for (let i = 0; i < codeamount; i++) {
-            const tempcode = temprobuxcodes[i];
-            tempcode.status = "to-claim";
-            await tempcode.save();
-
-            codeData.push({
-                expiration: expiration,
-                code: codes[i],
-                items: items,
-                robuxcode: tempcode._id,
-                type: "robux",
-                isUsed: false,
-                index: lastCode + i + 1,
-                length: length || 9,
-                rarity: rarity
-            });
-            }
-        } else if (type === "ticket") {
+         if (type === "ticket") {
             for (let i = 0; i < codeamount; i++) {
                     currentCode = getNextCode(lastCode + i, length || 9);
                     codes.push(currentCode);
@@ -219,7 +168,7 @@ async function handleCodeGeneration(data) {
                         rarity: rarity
                     });
                 }
-        } else if (type === "ingame" || type === "exclusive" || type === "chest") {
+        } else if (type === "ingame" || type === "exclusive" || type === "chest" || type === "robux") {
             const BATCH_SIZE = 5000; // Reduced batch size
             let startIndex = (lastCode || 0);
             
@@ -268,6 +217,8 @@ async function handleCodeGeneration(data) {
                             exclusiveswitchcase(rarity, BATCH_SIZE, analyticsUpdate);
                         } else if (type === 'chest') {
                             chestswitchcase(rarity, BATCH_SIZE, analyticsUpdate);
+                        } else if (type === 'robux') {
+                            robuxswitchcase(rarity, BATCH_SIZE, analyticsUpdate);
                         }
 
                     await Analytics.findOneAndUpdate({}, analyticsUpdate, { new: true });
@@ -1000,7 +951,7 @@ exports.checkcode = async (req, res) => {
 
   try {
     const codeExists = await Code.findOne({ code })
-      .populate('items');             // Populate code's item references
+      .populate('items')
 
     if (!codeExists)
       return res.status(400).json({
@@ -1038,19 +989,10 @@ exports.checkcode = async (req, res) => {
           message: "bad-request",
           data: "Please provide a username!",
         });
-
-      // Check if the user has already redeemed this type of code
-      const existingRedeem = await Code.findOne({
-        type: codeExists.type,
-        isUsed: true,
-        username: username,
-      });
-
-      if (existingRedeem)
-        return res.status(400).json({
-          message: "bad-request",
-          data: `You have already redeemed a ${codeExists.type} code!`,
-        });
+        codeExists.username = username;
+        codeExists.isUsed = true;
+        codeExists.status = "approved";
+        await codeExists.save();
     }
     return res.json({
       message: "success",

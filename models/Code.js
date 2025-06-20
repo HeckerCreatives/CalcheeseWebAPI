@@ -29,6 +29,7 @@ const CodeSchema = new mongoose.Schema(
         status: {
             type: String,
             default: "to-claim",
+            index: true // Automatically creates an index on 'amount'
         },
         isUsed: {
             type: Boolean,
@@ -38,6 +39,7 @@ const CodeSchema = new mongoose.Schema(
         code: {
             type: String,
             unique: true,
+            index: true // Automatically creates an index on 'amount'
         },
         guardian: {
             type: String,
