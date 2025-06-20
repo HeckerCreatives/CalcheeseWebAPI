@@ -201,6 +201,11 @@ async function handleCodeGeneration(data) {
                     }
                     
 
+
+                    io.emit('generate-progress', {
+                        percentage,
+                        status: `Saving In-Game codes for batch ${tempbatch}. Progress: ${batchEnd.toLocaleString()}/${codeamount.toLocaleString()}`
+                    });
                     
                     // Replace the original line with:
                     await saveWithFallback(batchData);
@@ -222,12 +227,6 @@ async function handleCodeGeneration(data) {
                         }
 
                     await Analytics.findOneAndUpdate({}, analyticsUpdate, { new: true });
-
-
-                    io.emit('generate-progress', {
-                        percentage,
-                        status: `Saving In-Game codes for batch ${tempbatch}. Progress: ${batchEnd.toLocaleString()}/${codeamount.toLocaleString()}`
-                    });
                     tempbatch++
                 } catch (err) {
                     throw err;
@@ -942,7 +941,14 @@ exports.getcodes = async (req, res) => {
 
 exports.checkcode = async (req, res) => {
   const { code, username } = req.body;
+    const allowedChars = /^[ACDEFHJKLMNPRTUVXWY379]+$/;
 
+    if (!code || typeof code !== 'string' || !allowedChars.test(code.toUpperCase()) || code.length < 7 || code.length > 12) {
+        return res.status(400).json({
+            message: "bad-request",
+            data: "Please provide a valid code! It should be 7-12 characters long and contain only letters and numbers.",
+        });
+    }
   if (!code)
     return res.status(400).json({
       message: "bad-request",
@@ -950,7 +956,7 @@ exports.checkcode = async (req, res) => {
     });
 
   try {
-    const codeExists = await Code.findOne({ code })
+    const codeExists = await Code.findOne({ code: code.toUpperCase() })
       .populate('items')
 
     if (!codeExists)
