@@ -1,5 +1,5 @@
 const { newgeneratecode, getcodes, checkcode, redeemcode, approverejectcode, deletecode, exportCodesCSV, editmultiplecodes } = require('../controllers/code');
-const { protectsuperadmin } = require('../middleware/middleware');
+const { protectsuperadmin, protectplayer } = require('../middleware/middleware');
 
 const upload = require("../middleware/uploadpics")
 const uploadimg = upload.single("picture")
@@ -9,7 +9,6 @@ const router = require('express').Router();
 router
  .post("/generatecode", protectsuperadmin, newgeneratecode)
  .get("/getcodes", protectsuperadmin, getcodes)
- .post("/checkcode", checkcode)
  .post("/redeemcode", function (req, res, next) {
     uploadimg(req, res, function(err){
         if(err) {
@@ -22,4 +21,6 @@ router
  .post("/deletecode", protectsuperadmin, deletecode)
  .get('/export-csv', exportCodesCSV)
  .post("/editmultiplecodes", protectsuperadmin, editmultiplecodes)
+ .post("/checkcode", protectplayer, checkcode)
+
 module.exports = router;

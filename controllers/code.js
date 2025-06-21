@@ -12,6 +12,7 @@ const createCsvWriter = require('csv-writer').createObjectCsvWriter;
 const archiver = require('archiver');
 const { Analytics, RedeemedCodeAnalytics } = require("../models/Analytics");
 const crypto = require('crypto');
+const Inventory = require("../models/Inventory");
 
 const CHARSET = 'ACDEFHJKLMNPRTUVXWY379';
 const CODE_LENGTH = 9;
@@ -1056,6 +1057,7 @@ exports.getcodes = async (req, res) => {
 
 
 exports.checkcode = async (req, res) => {
+   const { id } = req.user
   const { code, username } = req.body;
     const allowedChars = /^[ACDEFHJKLMNPRTUVXWY379]+$/;
 
@@ -1081,6 +1083,7 @@ exports.checkcode = async (req, res) => {
         data: "Code does not exist!",
       });
 
+
     if (codeExists.isUsed)
       return res.status(400).json({
         message: "bad-request",
@@ -1093,7 +1096,7 @@ exports.checkcode = async (req, res) => {
         data: "Code has expired!",
       });
 
-    if (codeExists.status === "claimed")
+    if (codeExists.status === "claimed" || codeExists.status === "approved" || codeExists.status === "pre-claimed" || codeExists.status === "rejected") 
       return res.status(400).json({
         message: "bad-request",
         data: "Code has already been redeemed!",
@@ -1114,8 +1117,27 @@ exports.checkcode = async (req, res) => {
         codeExists.username = username;
         codeExists.isUsed = true;
         codeExists.status = "approved";
-        await codeExists.save();
+    } else if (codeExists.type === 'robux' || codeExists.type === 'ticket') {
+        codeExists.status = "pre-claimed"        
     }
+
+    await Inventory.create({
+        owner: id,
+        type: codeExists.type,
+        items: codeExists.items,
+        rarity: codeExists.rarity,
+        code: codeExists.code,
+    })
+    .then(data => data)
+    .catch(err => {
+        console.error(`Error creating inventory: ${err}`);
+        return res.status(500).json({
+            message: "bad-request",
+            data: "There's a problem with the server! Please contact customer support.",
+        });
+    });
+    await codeExists.save();
+    
     return res.json({
       message: "success",
       data: {
@@ -1140,6 +1162,7 @@ exports.checkcode = async (req, res) => {
     });
   }
 };
+
 
 
 

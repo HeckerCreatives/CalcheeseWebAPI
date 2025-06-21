@@ -12,6 +12,7 @@ const path = require("path");
 
 const privateKey = fs.readFileSync(path.resolve(__dirname, "../keys/private-key.pem"), 'utf-8');
 const { default: mongoose } = require("mongoose");
+const Player = require("../models/Player");
 
 const encrypt = async password => {
     const salt = await bcrypt.genSalt(10);
@@ -88,4 +89,101 @@ exports.changepassword = async (req, res) => {
     })
 
     return res.json({message: "success" })
+}
+
+exports.register = async (req, res) => {
+    const { playerid, username } = req.body;
+
+    if (!playerid || !username) return res.status(400).json({ message: "bad-request", data: "Please provide a player ID and username!" });
+    if (username.length < 3) return res.status(400).json({ message: "bad-request", data: "Username must be at least 3 characters!" });
+    if (username.length > 20) return res.status(400).json({ message: "bad-request", data: "Username must be at most 20 characters!" });
+
+    const existingPlayer = await Player.findOne({ playerid: playerid });
+    if (!existingPlayer) return res.status(400).json({ message: "bad-request", data: "Player ID not found!" });
+    
+    const token = await encrypt(privateKey)
+
+   // create player
+
+  const player = await Player.create({
+        playerid: playerid,
+        username: username,
+        token: token,
+        status: "active"
+    })
+    .then(data => data)
+    .catch(err => {
+        console.error("Error while creating player:", err);
+        return res.status(400).json({ message: "bad-request", data: "There's a problem with your account! Please contact customer support for more details." });
+    });
+
+    // Prepare payload for JWT
+    const payload = {
+        id: player._id,
+        playerid: player.playerid,
+        username: player.username,
+        token: token,
+    };
+
+    let jwtoken = "";
+    try {
+        jwtoken = await jsonwebtokenPromisified.sign(payload, privateKey, { algorithm: 'RS256' });
+    } catch (error) {
+        console.error('Error signing token:', error.message);
+        return res.status(500).json({ error: 'Internal Server Error', data: "There's a problem signing in! Please contact customer support for more details! Error 004" });
+    }
+    
+    res.cookie('sessionToken', jwtoken, { secure: true, sameSite: 'None' } )
+
+    // Return the token and player info
+    return res.json({
+        message: "success",
+        data: {
+            token: jwtoken,
+            playerid: existingPlayer.playerid,
+            username: existingPlayer.username
+        }
+    });
+}
+
+
+exports.ingamelogin = async (req, res) => {
+    const { playerid } = req.body;
+    if (!playerid) return res.status(400).json({ message: "bad-request", data: "Please provide a player ID!" });
+
+    const player = await Player.findOne({ playerid: playerid });
+    if (!player) return res.status(400).json({ message: "bad-request", data: "Player ID not found!" });
+
+    const token = await encrypt(privateKey);
+    await Player.findByIdAndUpdate({
+        _id: player._id
+    }, {
+        $set: { token: token }
+    }, { new: true })
+
+    const payload = {
+        id: player._id,
+        playerid: player.playerid,
+        username: player.username,
+        token: token,
+    };
+
+    let jwtoken = "";
+
+    try {
+        jwtoken = await jsonwebtokenPromisified.sign(payload, privateKey, { algorithm: 'RS256' });
+    } catch (error) {
+        console.error('Error signing token:', error.message);
+        return res.status(500).json({ error: 'Internal Server Error', data: "There's a problem signing in! Please contact customer support for more details! Error 004" });
+    }
+
+    res.cookie('sessionToken', jwtoken, { secure: true, sameSite: 'None' });
+    return res.json({
+        message: "success",
+        data: {
+            token: jwtoken,
+            playerid: player.playerid,
+            username: player.username
+        }
+    });
 }
