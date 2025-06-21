@@ -140,6 +140,7 @@ exports.register = async (req, res) => {
         message: "success",
         data: {
             token: jwtoken,
+            auth: "player",
             playerid: existingPlayer.playerid,
             username: existingPlayer.username
         }
@@ -182,6 +183,7 @@ exports.ingamelogin = async (req, res) => {
         message: "success",
         data: {
             token: jwtoken,
+            auth: "player",
             playerid: player.playerid,
             username: player.username
         }
