@@ -99,7 +99,7 @@ exports.register = async (req, res) => {
     if (username.length > 20) return res.status(400).json({ message: "bad-request", data: "Username must be at most 20 characters!" });
 
     const existingPlayer = await Player.findOne({ playerid: playerid });
-    if (!existingPlayer) return res.status(400).json({ message: "bad-request", data: "Player ID not found!" });
+    if (existingPlayer) return res.status(400).json({ message: "failed", data: "Player already exists!" });
     
     const token = await encrypt(privateKey)
 
