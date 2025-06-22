@@ -61,7 +61,7 @@ exports.protectplayer= async (req, res, next) => {
 
 
     console.log(`token: ${token}`)
-    
+
     if (!token){
         return res.status(401).json({ message: 'Unauthorized', data: "You are not authorized to view this page. Please login the right account to view the page." });
     }
@@ -74,6 +74,8 @@ exports.protectplayer= async (req, res, next) => {
         const headerpart = token.split(' ')[1]
 
         const decodedToken = await verifyJWT(headerpart);
+
+        console.log(decodedToken)
 
         if (decodedToken.auth != "player"){
             return res.status(401).json({ message: 'Unauthorized', data: "You are not authorized to view this page. Please login the right account to view the page." });
