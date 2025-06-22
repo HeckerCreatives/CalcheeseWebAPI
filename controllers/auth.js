@@ -123,6 +123,7 @@ exports.register = async (req, res) => {
         playerid: player.playerid,
         username: player.username,
         token: token,
+        auth: "player"
     };
 
     let jwtoken = "";
@@ -167,6 +168,7 @@ exports.ingamelogin = async (req, res) => {
         playerid: player.playerid,
         username: player.username,
         token: token,
+        auth: "player"
     };
 
     let jwtoken = "";
