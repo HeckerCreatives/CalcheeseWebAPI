@@ -9,6 +9,6 @@ router
     .post("/login", authlogin)
     .post("/changepassword", protectsuperadmin, changepassword)
     .get("/logout", logout)
-    .post("/register", protectsuperadmin, register)
+    .post("/register", register)
     .post("/ingamelogin", ingamelogin)
 module.exports = router;
