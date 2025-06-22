@@ -141,8 +141,8 @@ exports.register = async (req, res) => {
         data: {
             token: jwtoken,
             auth: "player",
-            playerid: existingPlayer.playerid,
-            username: existingPlayer.username
+            playerid: player.playerid,
+            username: player.username
         }
     });
 }
