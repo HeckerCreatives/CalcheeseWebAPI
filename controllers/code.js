@@ -13,6 +13,7 @@ const archiver = require('archiver');
 const { Analytics, RedeemedCodeAnalytics } = require("../models/Analytics");
 const crypto = require('crypto');
 const Inventory = require("../models/Inventory");
+const Player = require("../models/Player");
 
 const CHARSET = 'ACDEFHJKLMNPRTUVXWY379';
 const CODE_LENGTH = 9;
@@ -1114,9 +1115,28 @@ exports.checkcode = async (req, res) => {
           message: "bad-request",
           data: "Please provide a username!",
         });
-        codeExists.username = username;
+        codeExists.name = username;
         codeExists.isUsed = true;
         codeExists.status = "approved";
+
+        await Analytics.findOneAndUpdate({},
+            { $inc: { totalclaimed: 1, totaltoclaim: -1 } },
+            { new: true }
+        )
+        .then(data => data)
+        .catch(err => {
+            console.log(`There's a problem updating the analytics. Error ${err}`);
+            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+        });
+        
+        await RedeemedCodeAnalytics.create({
+            code: codeExists._id,
+        })
+        .then(data => data)
+        .catch(err => {
+            console.log(`There's a problem creating the redeemed code analytics. Error ${err}`);
+            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+        });
     } else if (codeExists.type === 'robux' || codeExists.type === 'ticket') {
         codeExists.status = "pre-claimed"        
     }
@@ -1168,11 +1188,30 @@ exports.checkcode = async (req, res) => {
 
 exports.redeemcode = async (req, res) => {
 
-    const { code, guardian, name, email, contact, address } = req.body;
+    const { code, guardian, email, contact, address, robloxid } = req.body;
     const picture = req.file ? req.file.filename : undefined;
 
 
     if (!code) return res.status(400).json({ message: "bad-request", data: "Please provide a code!" });
+    if (!robloxid) return res.status(400).json({ message: "bad-request", data: "Please provide your Roblox ID!" });
+
+    const findPlayer = await Player.findOne({ playerid: robloxid })
+        .then(data => data)
+        .catch(err => {
+            console.log(`There's a problem checking the player. Error ${err}`);
+            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+        });
+    if (!findPlayer) return res.status(400).json({ message: "bad-request", data: "Player does not exist!" });
+    
+    // check player inventory
+    const playerInventory = await Inventory.findOne({ owner: findPlayer._id, code: code })
+        .then(data => data)
+        .catch(err => {
+            console.log(`There's a problem checking the player inventory. Error ${err}`);
+            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+        });
+
+    if (!playerInventory) return res.status(400).json({ message: "bad-request", data: "You don't have this code in your inventory!" });
     
     const codeExists = await Code.findOne({ code: code })
         .then(data => data)
@@ -1186,26 +1225,12 @@ exports.redeemcode = async (req, res) => {
 
     // robux redeem code
     if (codeExists.type === "robux") {
-
-        if (!name || !email || !address) return res.status(400).json({ message: "bad-request", data: "Please fill in all the required fields!" });
-       
-        const robuxcode = await RobuxCode.findById(codeExists.robuxcode)
-            .then(data => data)
-            .catch(err => {
-                console.log(`There's a problem checking the robux code. Error ${err}`);
-                return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
-            });
-
-        if (!robuxcode) return res.status(400).json({ message: "bad-request", data: "Robux code does not exist!" });
-        if (robuxcode.status !== "to-claim") return res.status(400).json({ message: "bad-request", data: "Robux code is not available!" });
-
-        robuxcode.status = "claimed";
-        await robuxcode.save();
-
+        
+        if (!robloxid || !email || !address) return res.status(400).json({ message: "bad-request", data: "Please fill in all the required fields!" });
+        if (codeExists.status !== "pre-claimed") return res.status(400).json({ message: "bad-request", data: "Ticket is not available!" });
         // save details to code
-        codeExists.name = name;
+        codeExists.name = robloxid;
         codeExists.email = email;
-        codeExists.address = address;
         codeExists.isUsed = true;
         codeExists.status = "claimed";
 
@@ -1239,7 +1264,7 @@ exports.redeemcode = async (req, res) => {
     } else 
     // ticket redeem code
     if (codeExists.type === "ticket") {
-        if (!guardian || !contact || !address || !name || !email || !picture) return res.status(400).json({ message: "bad-request", data: "Please fill in all the required fields!" });
+        if (!guardian || !contact || !address || !robloxid || !email || !picture) return res.status(400).json({ message: "bad-request", data: "Please fill in all the required fields!" });
 
         const ticket = await Ticket.findById(codeExists.ticket)
             .then(data => data)
@@ -1249,13 +1274,13 @@ exports.redeemcode = async (req, res) => {
             });
 
         if (!ticket) return res.status(400).json({ message: "bad-request", data: "Ticket does not exist!" });
-        if (ticket.status !== "to-claim") return res.status(400).json({ message: "bad-request", data: "Ticket is not available!" });
+        if (codeExists.status !== "pre-claimed") return res.status(400).json({ message: "bad-request", data: "Ticket is not available!" });
 
         ticket.status = "claimed";
         await ticket.save();
 
         // save details to code
-        codeExists.name = name;
+        codeExists.name = robloxid;
         codeExists.email = email;
         codeExists.contact = contact;
         codeExists.address = address;
@@ -1291,43 +1316,7 @@ exports.redeemcode = async (req, res) => {
                 type: codeExists.type,
             }
         }) 
-    } else 
-    // ingame redeem code
-    if (codeExists.type === "ingame") {
-        // update code to approved and return code
-        if (!name) return res.status(400).json({ message: "bad-request", data: "Please fill in all the required fields!" });
-        codeExists.isUsed = true;
-        codeExists.status = "approved";
-        await codeExists.save();
-
-        await Analytics.findOneAndUpdate({},
-            { $inc: { totalclaimed: 1, totaltoclaim: -1 } },
-            { new: true }
-        )
-        .then(data => data)
-        .catch(err => {
-            console.log(`There's a problem updating the analytics. Error ${err}`);
-            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
-        });
-        
-        await RedeemedCodeAnalytics.create({
-            code: codeExists._id,
-        })
-        .then(data => data)
-        .catch(err => {
-            console.log(`There's a problem creating the redeemed code analytics. Error ${err}`);
-            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
-        });
-
-        return res.json({
-            message: "success",
-            data: {
-                code: codeExists.code,
-                type: codeExists.type,
-            }
-        }) 
     }
-
 }
 
 exports.approverejectcode = async (req, res) => {
@@ -1737,5 +1726,46 @@ exports.editmultiplecodes = async (req, res) => {
 
     return res.json({
         message: "success",
+    });
+}
+
+exports.resetcode = async (req, res) => {
+    const { id } = req.body;
+
+    if (!id) return res.status(400).json({ message: "bad-request", data: "Please provide a code ID!" });
+
+    const code = await Code.findById(id)
+        .then(data => data)
+        .catch(err => {
+            console.log(`There's a problem checking the code. Error ${err}`);
+            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+        });
+
+    if (!code) return res.status(400).json({ message: "bad-request", data: "Code does not exist!" });
+    if (code.isUsed) return res.status(400).json({ message: "bad-request", data: "Code has already been redeemed!" });
+
+    code.isUsed = false;
+    code.status = "to-claim"; // Reset status to "to-claim" or "to-generate" based on your logic
+    code.name = null;
+    code.email = null;
+    code.address = null;
+    code.contact = null;
+    code.guardian = null;
+    code.picture = null;
+
+    await code.save()
+        .then(data => data)
+        .catch(err => {
+            console.log(`There's a problem resetting the code. Error ${err}`);
+            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+        });
+
+    return res.json({
+        message: "success",
+        data: {
+            id: code._id,
+            type: code.type,
+            status: code.status,
+        }
     });
 }
