@@ -28,7 +28,7 @@ const CodeSchema = new mongoose.Schema(
         },
         status: {
             type: String,
-            default: "to-claim",
+            enum: ['to-claim', 'claimed', 'pre-claim', 'approved', 'rejected', 'to-generate'],
             index: true // Automatically creates an index on 'amount'
         },
         isUsed: {

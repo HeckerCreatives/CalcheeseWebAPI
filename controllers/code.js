@@ -700,8 +700,10 @@ exports.getcodes = async (req, res) => {
     if (status && ['to-generate', "to-claim", 'claimed', "approved", "expired", null].includes(status.toLowerCase())) {
         if (status.toLowerCase() === "expired") {
             filter.expiration = { $lte: new Date() };
+            console.log("Expired codes filter applied");
         } else {
-            filter.status = status;
+            console.log("Status filter applied:", status);
+            filter.status = status.toLowerCase();
         }
     }
     if (rarity && ["common", "uncommon", "rare", "epic", "legendary"].includes(rarity)) {
@@ -716,6 +718,7 @@ exports.getcodes = async (req, res) => {
             { "ticket.ticketid": searchRegex }
         ];
     }
+
     let totalDocs = 0;
     const codes = await Code.aggregate([
         {
@@ -728,17 +731,6 @@ exports.getcodes = async (req, res) => {
                 foreignField: "_id",
                 as: "items",
             },
-        },
-        {
-            $lookup: {
-                from: "robuxcodes",
-                localField: "robuxcode",
-                foreignField: "_id",
-                as: "robuxcode",
-            },
-        },
-        {
-            $unwind: { path: "$robuxcode", preserveNullAndEmptyArrays: true },
         },
         {
             $lookup: {
@@ -767,6 +759,9 @@ exports.getcodes = async (req, res) => {
             return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
         });
     
+    // test if codes with status claimed is empty
+
+    const claimedCodes = await Code.countDocuments({ status: "claimed" })
 
     const finalData = codes.map(code => {
         const result = {
@@ -786,13 +781,6 @@ exports.getcodes = async (req, res) => {
             isUsed: code.isUsed,
             claimdate: code.updatedAt
         };
-
-        if (code.robuxcode && code.robuxcode._id) {
-            result.robuxcode = {
-                id: code.robuxcode._id,
-                robuxcode: code.robuxcode.robuxcode,
-            };
-        }
 
         if (code.ticket && code.ticket._id) {
             result.ticket = {
@@ -1117,7 +1105,7 @@ exports.checkcode = async (req, res) => {
         });
         codeExists.name = username;
         codeExists.isUsed = true;
-        codeExists.status = "approved";
+        codeExists.status = "claimed";
 
         await Analytics.findOneAndUpdate({},
             { $inc: { totalclaimed: 1, totaltoclaim: -1 } },
@@ -1743,6 +1731,14 @@ exports.resetcode = async (req, res) => {
 
     if (!code) return res.status(400).json({ message: "bad-request", data: "Code does not exist!" });
     if (code.isUsed) return res.status(400).json({ message: "bad-request", data: "Code has already been redeemed!" });
+
+    // check code status
+
+    if (code.status !== "claimed" && code.status !== "approved" && code.status !== "rejected") {
+        await Analytics.findOneAndUpdate({},
+            { $inc: { totaltoclaim: 1, totalclaimed: -1 } },
+            { new: true })
+    }
 
     code.isUsed = false;
     code.status = "to-claim"; // Reset status to "to-claim" or "to-generate" based on your logic
