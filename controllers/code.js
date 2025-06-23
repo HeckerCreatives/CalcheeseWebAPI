@@ -700,22 +700,20 @@ exports.getcodes = async (req, res) => {
     if (status && ['to-generate', "to-claim", 'claimed', "approved", "expired", null].includes(status.toLowerCase())) {
         if (status.toLowerCase() === "expired") {
             filter.expiration = { $lte: new Date() };
-            console.log("Expired codes filter applied");
         } else {
-            console.log("Status filter applied:", status);
             filter.status = status.toLowerCase();
         }
     }
     if (rarity && ["common", "uncommon", "rare", "epic", "legendary"].includes(rarity)) {
         filter.rarity = rarity;
     }
-    if (archive !== undefined) {
         if (archive === 'true' || archive === true) {
             filter.archived = true;
-        } else if (archive === 'false' || archive === false) {
+        } else {
             filter.archived = { $in: [false, undefined] };
         }
-    }
+
+    console.log("Filter:", filter);
     if (search) {
         const searchRegex = new RegExp(search, 'i'); // Case-insensitive search
         filter.$or = [
@@ -726,7 +724,6 @@ exports.getcodes = async (req, res) => {
         ];
     }
 
-    console.log("Filter applied:", filter);
     let totalDocs = 0;
     const codes = await Code.aggregate([
         {
@@ -770,7 +767,6 @@ exports.getcodes = async (req, res) => {
     // test if codes with status claimed is empty
 
     const finalData = codes.map(code => {
-        console.log('Code status:', code?.status || 'no-status');
         const result = {
             id: code._id,
             code: code.code,
@@ -786,7 +782,8 @@ exports.getcodes = async (req, res) => {
             expiration: moment(code.expiration).format("YYYY-MM-DD"),
             type: code.type,
             isUsed: code.isUsed,
-            claimdate: code.updatedAt
+            claimdate: code.updatedAt,
+            archived: code.archived || false,
         };
 
         if (code.ticket && code.ticket._id) {
@@ -825,8 +822,10 @@ exports.getcodes = async (req, res) => {
             return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
         });
 
-
-            if (filter.type) {
+    if (filter.archived === true) {
+        totalDocs = AnalyticsData.totalarchived || 0;
+        console.log('Using archived total:', totalDocs);
+    } else if (filter.type) {
                 switch(filter.type) {
                     case 'ingame':
                         console.log('Checking ingame codes...');
@@ -1005,12 +1004,10 @@ exports.getcodes = async (req, res) => {
                         console.log('Total docs:', totalDocs);
                 }
             } else {
-                console.log('No type filter, using overall totals');
                 totalDocs = (AnalyticsData.totalclaimed + 
                              AnalyticsData.totalapproved + 
                              AnalyticsData.totaltoclaim + 
                              AnalyticsData.totalexpired) || 0;
-                console.log('Total docs:', totalDocs);
             }
         const totalPages = Math.ceil(totalDocs / pageOptions.limit);
 
@@ -1403,72 +1400,47 @@ exports.approverejectcode = async (req, res) => {
 
 exports.deletecode = async (req, res) => {
     const { ids } = req.body; // Expect array of IDs
-    
+
     if (!ids || !Array.isArray(ids) || ids.length === 0) {
-        return res.status(400).json({ 
-            message: "bad-request", 
-            data: "Please provide at least one code ID!" 
+        return res.status(400).json({
+            message: "bad-request",
+            data: "Please provide at least one code ID!"
         });
     }
 
     try {
         // Find all codes to be deleted
-        const codes = await Code.find({ _id: { $in: ids }});
-        
+        const codes = await Code.find({ _id: { $in: ids } });
+
         if (codes.length === 0) {
             return res.status(400).json({
-                message: "bad-request", 
+                message: "bad-request",
                 data: "No valid codes found!"
             });
         }
 
-        let analyticsUpdates = {
-            totalclaimed: 0,
-            totalapproved: 0,
-            totaltogenerate: 0,
-            totaltoclaim: 0,
-            totalexpired: 0
-        };
-
-        // Process each code
-        for (const code of codes) {
-            if (code.status === "claimed") {
-                continue; // Skip claimed codes
-            }
-
-            // Handle ticket type
-            if (code.type === "ticket" && code.ticket) {
-                await Ticket.findByIdAndUpdate(code.ticket, {
-                    status: "to-generate"
-                });
-            }
-            
-            // Handle robux type
-            else if (code.type === "robux" && code.robuxcode) {
-                await RobuxCode.findByIdAndUpdate(code.robuxcode, {
-                    status: "to-generate"
-                });
-            }
-
-            // Update analytics counters
-            const isExpired = code.expiration < new Date();
-            
-            analyticsUpdates.totalclaimed += code.isUsed ? -1 : 0;
-            analyticsUpdates.totalapproved += code.status === "approved" ? -1 : 0;
-            analyticsUpdates.totaltogenerate += code.status === "to-generate" ? -1 : 0;
-            analyticsUpdates.totaltoclaim += code.status === "to-claim" ? -1 : 0;
-            analyticsUpdates.totalexpired += isExpired ? 1 : 0;
+        // Check if any codes are not archived
+        const nonArchivedCodes = codes.filter(code => !code.archived);
+        if (nonArchivedCodes.length > 0) {
+            return res.status(400).json({
+                message: "bad-request",
+                data: "Cannot delete codes that are not archived. Please archive the codes first."
+            });
         }
 
-        // Update analytics in one operation
-        await Analytics.findOneAndUpdate({}, {
-            $inc: analyticsUpdates
-        });
+        for (const code of codes) {
+            // Reset ticket/robux status if needed
+            if (code.type === "ticket" && code.ticket) {
+                await Ticket.findByIdAndUpdate(code.ticket, { status: "to-generate" });
+            } else if (code.type === "robux" && code.robuxcode) {
+                await RobuxCode.findByIdAndUpdate(code.robuxcode, { status: "to-generate" });
+            }
+        }
 
         // Delete all codes in one operation
-        await Code.deleteMany({ _id: { $in: ids }});
+        await Code.deleteMany({ _id: { $in: ids } });
 
-        return res.json({ 
+        return res.json({
             message: "success",
             deletedCount: codes.length
         });
@@ -1678,6 +1650,8 @@ exports.editmultiplecodes = async (req, res) => {
         for (const code of originalCodes) {
             await updateAnalyticsOnArchive(code, -1); // decrement analytics
         }
+
+        console.log(`Archiving ${originalCodes.length} codes...`);
     } else if (archive === false) {
         // Unarchive: set archived=false, restore to analytics
         for (const code of originalCodes) {
@@ -1712,21 +1686,35 @@ exports.editmultiplecodes = async (req, res) => {
 async function updateAnalyticsOnArchive(code, direction = -1) {
     // direction: -1 for archive (decrement), 1 for unarchive (increment)
     const analyticsUpdate = { $inc: {} };
-    // Example for status/type/rarity
+    
+    const analyticsData = await Analytics.findOne({});
+    console.log(`Current analytics data:`, analyticsData);
+    // Update status counters
     if (code.status === "claimed") analyticsUpdate.$inc.totalclaimed = direction;
     if (code.status === "to-claim") analyticsUpdate.$inc.totaltoclaim = direction;
     if (code.status === "approved") analyticsUpdate.$inc.totalapproved = direction;
     if (code.status === "to-generate") analyticsUpdate.$inc.totaltogenerate = direction;
     if (code.status === "rejected") analyticsUpdate.$inc.totalrejected = direction;
-    // Add type/rarity-specific fields as needed
-    // e.g. analyticsUpdate.$inc[`total${code.type}${code.rarity}`] = direction;
-    await Analytics.findOneAndUpdate({}, analyticsUpdate);
+    
+    // Update type-rarity specific counters
+    if (code.type && code.rarity) {
+        const typeRarityField = `total${code.type}${code.rarity}`;
+        analyticsUpdate.$inc[typeRarityField] = direction;
+    }
+
+    // Update archive counter with opposite direction
+    analyticsUpdate.$inc.totalarchived = -direction;
+
+    console.log(`Updating analytics for code ${code._id}:`, analyticsUpdate);
+    const result = await Analytics.findOneAndUpdate({}, analyticsUpdate, { new: true });
+    console.log(`Updated analytics for code ${code._id}:`, result);
 }
 
 // Helper: Update analytics on edit (status/type/rarity change)
 async function updateAnalyticsOnEdit(original, updated) {
     const analyticsUpdate = { $inc: {} };
     // Status change
+    analyticsUpdate.$inc.totalarchived = -1
     if (updated.status && updated.status !== original.status) {
         if (original.status === "claimed") analyticsUpdate.$inc.totalclaimed = -1;
         if (updated.status === "claimed") analyticsUpdate.$inc.totalclaimed = 1;

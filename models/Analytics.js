@@ -122,6 +122,10 @@ const AnalyticsSchema = new mongoose.Schema(
             type: Number,
             default: 0,
         },
+        totalarchived: {
+            type: Number,
+            default: 0,
+        },
     },
     {
         timestamps: true,
