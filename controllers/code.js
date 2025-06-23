@@ -710,7 +710,7 @@ exports.getcodes = async (req, res) => {
         filter.rarity = rarity;
     }
     if (archive) {
-        filter.archive = archive === undefined ? undefined : archive;
+        filter.archived = archive === 'false' ? { $in: [false, undefined] } : archive;
     }
     if (search) {
         const searchRegex = new RegExp(search, 'i'); // Case-insensitive search
