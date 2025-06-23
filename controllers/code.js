@@ -709,8 +709,12 @@ exports.getcodes = async (req, res) => {
     if (rarity && ["common", "uncommon", "rare", "epic", "legendary"].includes(rarity)) {
         filter.rarity = rarity;
     }
-    if (archive) {
-        filter.archived = archive === 'false' ? { $in: [false, undefined] } : archive;
+    if (archive !== undefined) {
+        if (archive === 'true' || archive === true) {
+            filter.archived = true;
+        } else if (archive === 'false' || archive === false) {
+            filter.archived = { $in: [false, undefined] };
+        }
     }
     if (search) {
         const searchRegex = new RegExp(search, 'i'); // Case-insensitive search
@@ -722,6 +726,7 @@ exports.getcodes = async (req, res) => {
         ];
     }
 
+    console.log("Filter applied:", filter);
     let totalDocs = 0;
     const codes = await Code.aggregate([
         {
@@ -764,9 +769,8 @@ exports.getcodes = async (req, res) => {
     
     // test if codes with status claimed is empty
 
-    const claimedCodes = await Code.countDocuments({ status: "claimed" })
-
     const finalData = codes.map(code => {
+        console.log('Code status:', code?.status || 'no-status');
         const result = {
             id: code._id,
             code: code.code,
@@ -1100,6 +1104,13 @@ exports.checkcode = async (req, res) => {
         data: "Code is not available!",
       });
 
+    if (codeExists.archived === true) {
+        return res.status(400).json({
+            message: "bad-request",
+            data: "Code is archived and cannot be redeemed!",
+        });
+    }
+
     if (codeExists.type === 'exclusive' || codeExists.type === 'ingame' || codeExists.type === 'chest') {
       if (!username)
         return res.status(400).json({
@@ -1211,7 +1222,12 @@ exports.redeemcode = async (req, res) => {
 
     if (!codeExists) return res.status(400).json({ message: "bad-request", data: "Code does not exist!" });
     if (codeExists.isUsed) return res.status(400).json({ message: "bad-request", data: "Code has already been redeemed!" });
-
+    if (codeExists.archived === true) {
+        return res.status(400).json({
+            message: "bad-request",
+            data: "Code is archived and cannot be redeemed!",
+        });
+    }
     // robux redeem code
     if (codeExists.type === "robux") {
         
