@@ -688,7 +688,7 @@ async function handleCodeGeneration(data) {
 
 exports.getcodes = async (req, res) => {
 
-    const { page, limit, type, rarity, item, status, search } = req.query;
+    const { page, limit, type, rarity, item, status, search, archive } = req.query;
     const pageOptions = {
         page: parseInt(page) || 0,
         limit: parseInt(limit) || 10,
@@ -708,6 +708,9 @@ exports.getcodes = async (req, res) => {
     }
     if (rarity && ["common", "uncommon", "rare", "epic", "legendary"].includes(rarity)) {
         filter.rarity = rarity;
+    }
+    if (archive) {
+        filter.archive = archive === undefined ? undefined : archive;
     }
     if (search) {
         const searchRegex = new RegExp(search, 'i'); // Case-insensitive search
@@ -1172,8 +1175,6 @@ exports.checkcode = async (req, res) => {
 };
 
 
-
-
 exports.redeemcode = async (req, res) => {
 
     const { code, guardian, email, contact, address, robloxid } = req.body;
@@ -1610,8 +1611,7 @@ exports.exportCodesCSV = async (req, res) => {
 };
 
 exports.editmultiplecodes = async (req, res) => {
-
-    const { ids, type, items, rarity, expiration, status } = req.body;
+    const { ids, type, items, rarity, expiration, status, archive } = req.body;
     if (!ids || !Array.isArray(ids) || ids.length === 0) {
         return res.status(400).json({ 
             message: "bad-request", 
@@ -1619,8 +1619,8 @@ exports.editmultiplecodes = async (req, res) => {
         });
     }
 
-    const updatedata = {}
-
+    // Build update data
+    const updatedata = {};
     if (type) updatedata.type = type;
     if (items && Array.isArray(items) && items.length > 0) {
         updatedata.items = items.map(item => new mongoose.Types.ObjectId(item));
@@ -1635,9 +1635,9 @@ exports.editmultiplecodes = async (req, res) => {
     }
     if (expiration) updatedata.expiration = new Date(expiration);
     if (status && ['to-generate', "to-claim", 'claimed', "approved", "rejected"].includes(status.toLowerCase())) {
-        updatedata.status = status;
+        updatedata.status = status.toLowerCase();
     }
-
+    if (archive !== undefined) updatedata.archived = !!archive;
 
     if (type && !['robux', 'ticket', 'ingame', 'exclusive', 'chest'].includes(type.toLowerCase())) {
         return res.status(400).json({ 
@@ -1646,46 +1646,6 @@ exports.editmultiplecodes = async (req, res) => {
         });
     }
 
-
-        const ticketCodes = await Code.find({ _id: { $in: ids }, type: "ticket" })
-            .then(data => data)
-            .catch(err => {
-            console.log(`There's a problem checking ticket codes. Error ${err}`);
-            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
-            });
-            
-        const ticketIds = ticketCodes.map(code => code.ticket).filter(id => id);
-
-
-    if (type && type.toLowerCase() === 'ticket') {
-        // check available tickets
-
-        //check if in ids there's a code that has a ticket
-
-        
-        const availableTickets = await Ticket.countDocuments({ 
-        status: { $in: ["to-generate", "to-claim"] },
-        _id: { $nin: ticketIds } })
-            .then(data => data)
-            .catch(err => {
-                console.log(`There's a problem checking available tickets. Error ${err}`);
-                return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
-            });
-        if (availableTickets <= 0) {
-            return res.status(400).json({ 
-                message: "bad-request", 
-                data: "No available tickets to assign! Please generate more tickets." 
-            });
-        }
-
-        if (ids.length > availableTickets) {
-            return res.status(400).json({ 
-                message: "bad-request", 
-                data: `You can only assign up to ${availableTickets} tickets at a time!` 
-            });
-        }
-    } 
-
     if (Object.keys(updatedata).length === 0) {
         return res.status(400).json({ 
             message: "bad-request", 
@@ -1693,30 +1653,86 @@ exports.editmultiplecodes = async (req, res) => {
         });
     }
 
+    // Fetch original codes for comparison
     const originalCodes = await Code.find({ _id: { $in: ids } });
 
+    // Archive/unarchive logic
+    if (archive === true) {
+        // Archive: set archived=true, remove from analytics
+        for (const code of originalCodes) {
+            await updateAnalyticsOnArchive(code, -1); // decrement analytics
+        }
+    } else if (archive === false) {
+        // Unarchive: set archived=false, restore to analytics
+        for (const code of originalCodes) {
+            await updateAnalyticsOnArchive(code, 1); // increment analytics
+        }
+    }
+
+    // Status/type/rarity change logic
+    if (status || type || rarity) {
+        for (const code of originalCodes) {
+            await updateAnalyticsOnEdit(code, updatedata);
+        }
+    }
+
+    // Update codes
     await Code.updateMany(
         { _id: { $in: ids } },
         { $set: updatedata }
-    )
-        .then(data => data)
-        .catch(err => {
-            console.log(`There's a problem updating the codes. Error ${err}`);
-            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
-        });
+    );
 
-    // After update, restore robux/ticket status if needed
+    // Restore ticket/robux status if needed
     for (const code of originalCodes) {
         if (code.type === "ticket" && (updatedata.type && updatedata.type !== "ticket" || updatedata.ticket === null || updatedata.ticket === undefined) && code.ticket) {
             await Ticket.findByIdAndUpdate(code.ticket, { status: "to-generate" });
         }
     }
 
-    return res.json({
-        message: "success",
-    });
+    return res.json({ message: "success" });
+};
+
+// Helper: Update analytics on archive/unarchive
+async function updateAnalyticsOnArchive(code, direction = -1) {
+    // direction: -1 for archive (decrement), 1 for unarchive (increment)
+    const analyticsUpdate = { $inc: {} };
+    // Example for status/type/rarity
+    if (code.status === "claimed") analyticsUpdate.$inc.totalclaimed = direction;
+    if (code.status === "to-claim") analyticsUpdate.$inc.totaltoclaim = direction;
+    if (code.status === "approved") analyticsUpdate.$inc.totalapproved = direction;
+    if (code.status === "to-generate") analyticsUpdate.$inc.totaltogenerate = direction;
+    if (code.status === "rejected") analyticsUpdate.$inc.totalrejected = direction;
+    // Add type/rarity-specific fields as needed
+    // e.g. analyticsUpdate.$inc[`total${code.type}${code.rarity}`] = direction;
+    await Analytics.findOneAndUpdate({}, analyticsUpdate);
 }
 
+// Helper: Update analytics on edit (status/type/rarity change)
+async function updateAnalyticsOnEdit(original, updated) {
+    const analyticsUpdate = { $inc: {} };
+    // Status change
+    if (updated.status && updated.status !== original.status) {
+        if (original.status === "claimed") analyticsUpdate.$inc.totalclaimed = -1;
+        if (updated.status === "claimed") analyticsUpdate.$inc.totalclaimed = 1;
+        if (original.status === "to-claim") analyticsUpdate.$inc.totaltoclaim = -1;
+        if (updated.status === "to-claim") analyticsUpdate.$inc.totaltoclaim = 1;
+        // ...repeat for other statuses
+    }
+    // Type/rarity change (example)
+    if (updated.type && updated.type !== original.type) {
+        // Decrement old type/rarity, increment new type/rarity
+        if (original.rarity) analyticsUpdate.$inc[`total${original.type}${original.rarity}`] = -1;
+        if (updated.rarity) analyticsUpdate.$inc[`total${updated.type}${updated.rarity}`] = 1;
+    } else if (updated.rarity && updated.rarity !== original.rarity) {
+        // Only rarity changed
+        if (original.rarity) analyticsUpdate.$inc[`total${original.type}${original.rarity}`] = -1;
+        analyticsUpdate.$inc[`total${original.type}${updated.rarity}`] = 1;
+    }
+    // Only update if there are changes
+    if (Object.keys(analyticsUpdate.$inc).length > 0) {
+        await Analytics.findOneAndUpdate({}, analyticsUpdate);
+    }
+}
 exports.resetcode = async (req, res) => {
     const { id } = req.body;
 

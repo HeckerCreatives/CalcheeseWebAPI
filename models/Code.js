@@ -78,6 +78,11 @@ const CodeSchema = new mongoose.Schema(
             enum: ['common', 'uncommon', 'rare', 'epic', 'legendary'],
             index: true // Automatically creates an index on 'amount'
         },
+        archived: {
+            type: Boolean,
+            default: false,
+            index: true // Automatically creates an index on 'amount'
+        },
     },
     {
         timestamps: true
