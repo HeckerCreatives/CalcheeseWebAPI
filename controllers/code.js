@@ -14,6 +14,7 @@ const { Analytics, RedeemedCodeAnalytics } = require("../models/Analytics");
 const crypto = require('crypto');
 const Inventory = require("../models/Inventory");
 const Player = require("../models/Player");
+const { checkmaintenance } = require("../utils/maintenancetools");
 
 const CHARSET = 'ACDEFHJKLMNPRTUVXWY379';
 const CODE_LENGTH = 9;
@@ -31,6 +32,11 @@ exports.newgeneratecode = async (req, res) => {
     }
     if (!rarity || !["common", "uncommon", "rare", "epic", "legendary"].includes(rarity)) {
         return res.status(400).json({ message: "failed", data: "Please select a valid rarity!" });
+    }
+
+    const checkmainte = await checkmaintenance("generate");
+    if (checkmainte === "maintenance") {
+        return res.status(400).json({ message: "maintenance", data: "Code generation is currently under maintenance. Please try again later." });
     }
 
     try {
@@ -1326,7 +1332,11 @@ exports.approverejectcode = async (req, res) => {
     const { id, status } = req.body;
 
     if (!id || !status) return res.status(400).json({ message: "bad-request", data: "Please provide a code and status!" });
-
+    
+    const checkmainte = await checkmaintenance("edit");
+    if (checkmainte === "maintenance") {
+        return res.status(400).json({ message: "maintenance", data: "Approve/Reject Code is currently under maintenance. Please try again later." });
+    }
     const code = await Code.findById(id)
         .then(data => data)
         .catch(err => {
@@ -1408,6 +1418,10 @@ exports.deletecode = async (req, res) => {
         });
     }
 
+    const checkmainte = await checkmaintenance("delete");
+    if (checkmainte === "maintenance") {
+        return res.status(400).json({ message: "maintenance", data: "Code deletion is currently under maintenance. Please try again later." });
+    }
     try {
         // Find all codes to be deleted
         const codes = await Code.find({ _id: { $in: ids } });
@@ -1460,6 +1474,10 @@ exports.exportCodesCSV = async (req, res) => {
         const { type, item, status, dateRange, start, end, socketid } = req.query;
         const CHUNK_SIZE = 500000; // Default 1 million per file
 
+        const checkmainte = await checkmaintenance("export");
+        if (checkmainte === "maintenance") {
+            return res.status(400).json({ message: "maintenance", data: "Export code CSV is currently under maintenance. Please try again later." });
+        }
         // Build filter
         const filter = {};
         if (type) filter.type = type;
@@ -1607,6 +1625,11 @@ exports.editmultiplecodes = async (req, res) => {
         });
     }
 
+    const checkmainte = await checkmaintenance("edit");
+    if (checkmainte === "maintenance") {
+        return res.status(400).json({ message: "maintenance", data: "Code update is currently under maintenance. Please try again later." });
+    }
+
     // Build update data
     const updatedata = {};
     if (type) updatedata.type = type;
@@ -1700,6 +1723,8 @@ async function updateAnalyticsOnArchive(code, direction = -1) {
     if (code.type && code.rarity) {
         const typeRarityField = `total${code.type}${code.rarity}`;
         analyticsUpdate.$inc[typeRarityField] = direction;
+
+        console.log(`${analyticsUpdate.$inc[typeRarityField]} for ${typeRarityField}`);
     }
 
     // Update archive counter with opposite direction
@@ -1710,11 +1735,10 @@ async function updateAnalyticsOnArchive(code, direction = -1) {
     console.log(`Updated analytics for code ${code._id}:`, result);
 }
 
-// Helper: Update analytics on edit (status/type/rarity change)
 async function updateAnalyticsOnEdit(original, updated) {
     const analyticsUpdate = { $inc: {} };
+
     // Status change
-    analyticsUpdate.$inc.totalarchived = -1
     if (updated.status && updated.status !== original.status) {
         if (original.status === "claimed") analyticsUpdate.$inc.totalclaimed = -1;
         if (updated.status === "claimed") analyticsUpdate.$inc.totalclaimed = 1;
@@ -1722,26 +1746,34 @@ async function updateAnalyticsOnEdit(original, updated) {
         if (updated.status === "to-claim") analyticsUpdate.$inc.totaltoclaim = 1;
         // ...repeat for other statuses
     }
-    // Type/rarity change (example)
-    if (updated.type && updated.type !== original.type) {
-        // Decrement old type/rarity, increment new type/rarity
-        if (original.rarity) analyticsUpdate.$inc[`total${original.type}${original.rarity}`] = -1;
-        if (updated.rarity) analyticsUpdate.$inc[`total${updated.type}${updated.rarity}`] = 1;
-    } else if (updated.rarity && updated.rarity !== original.rarity) {
-        // Only rarity changed
-        if (original.rarity) analyticsUpdate.$inc[`total${original.type}${original.rarity}`] = -1;
-        analyticsUpdate.$inc[`total${original.type}${updated.rarity}`] = 1;
+
+    // Type/rarity change
+    const oldType = original.type;
+    const oldRarity = original.rarity;
+    const newType = updated.type || original.type;
+    const newRarity = updated.rarity || original.rarity;
+
+    if (oldType && oldRarity && (oldType !== newType || oldRarity !== newRarity)) {
+        // Decrement old
+        analyticsUpdate.$inc[`total${oldType}${oldRarity}`] = -1;
+        // Increment new
+        analyticsUpdate.$inc[`total${newType}${newRarity}`] = 1;
     }
+
     // Only update if there are changes
     if (Object.keys(analyticsUpdate.$inc).length > 0) {
         await Analytics.findOneAndUpdate({}, analyticsUpdate);
     }
 }
+
 exports.resetcode = async (req, res) => {
     const { id } = req.body;
 
     if (!id) return res.status(400).json({ message: "bad-request", data: "Please provide a code ID!" });
-
+    const checkmainte = await checkmaintenance("edit");
+    if (checkmainte === "maintenance") {
+        return res.status(400).json({ message: "maintenance", data: "Reset code is currently under maintenance. Please try again later." });
+    }
     const code = await Code.findById(id)
         .then(data => data)
         .catch(err => {
@@ -1750,7 +1782,6 @@ exports.resetcode = async (req, res) => {
         });
 
     if (!code) return res.status(400).json({ message: "bad-request", data: "Code does not exist!" });
-    if (code.isUsed) return res.status(400).json({ message: "bad-request", data: "Code has already been redeemed!" });
 
     // check code status
 
