@@ -330,7 +330,13 @@ exports.getpromocodesections = async (req, res) => {
                 description: item.description,
             }));
 
-            return res.json({ message: "success", data: finalData, totalpages });
+            // FIND PROMOCODE TITLE
+            
+            const titledata = finalData.find(item => item.title === 'Title')
+
+            // FILTER OUT TITLE FROM FINAL DATA
+            const filteredData = finalData.filter(item => item.title !== 'Title');
+            return res.json({ message: "success", data: filteredData, totalpages, titledata });
         })
         .catch(err => {
             console.log(`There's a problem fetching promo code sections. Error ${err}`);
