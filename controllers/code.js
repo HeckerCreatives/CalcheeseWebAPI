@@ -971,18 +971,20 @@ exports.getcodes = async (req, res) => {
                                     totalDocs = AnalyticsData.totalticketlegendary || 0; 
                                     break;
                             }
+                        } else {
+                            console.log('Calculating total ticket codes...');
+                            totalDocs = (AnalyticsData.totalticketcommon + 
+                                       AnalyticsData.totalticketuncommon + 
+                                       AnalyticsData.totalticketrare + 
+                                       AnalyticsData.totalticketepic + 
+                                       AnalyticsData.totalticketlegendary) || 0;
+                            console.log('Total ticket codes:', totalDocs);
                         }
-                    default:
-                        console.log('Using default total calculation');
-                        totalDocs = (AnalyticsData.totalclaimed + AnalyticsData.totalapproved + AnalyticsData.totaltoclaim + AnalyticsData.totalexpired) || 0;
-                        console.log('Total docs:', totalDocs);
-                }
-            } else {
-                totalDocs = (AnalyticsData.totalclaimed + 
-                             AnalyticsData.totalapproved + 
-                             AnalyticsData.totaltoclaim + 
-                             AnalyticsData.totalexpired) || 0;
-            }
+                    }
+    } else {
+        totalDocs = (AnalyticsData.totalclaimed + AnalyticsData.totalapproved + AnalyticsData.totaltoclaim + AnalyticsData.totalexpired) || 0;
+        console.log('Calculating total codes:', totalDocs);
+    }
         const totalPages = Math.ceil(totalDocs / pageOptions.limit);
 
 
