@@ -123,72 +123,40 @@ async function handleCodeGeneration(data) {
         const totalCodes = highestIndexCode ? highestIndexCode.index : 0;
         let lastCodeIndex = totalCodes + 1;
 
-        if (type === "ticket") {
-            const availableTickets = await Ticket.find({ status: "to-generate" });
-            if (!availableTickets || availableTickets.length < codeamount) {
-                io.emit('generate-progress', { percentage: 100, status: 'failed', success: false });
-                return;
-            }
+        let tempbatch = 1;
+        for (let batchStart = 0; batchStart < codeamount; batchStart += BATCH_SIZE) {
+            const batchEnd = Math.min(batchStart + BATCH_SIZE, codeamount);
+            const batchSize = batchEnd - batchStart;
+            const newCodes = await generateBatchUniqueCodes(batchSize);
 
-            const newCodes = await generateBatchUniqueCodes(codeamount);
+            const batchData = newCodes.map((code, i) => ({
+                expiration,
+                code,
+                items,
+                type,
+                isUsed: false,
+                index: lastCodeIndex + batchStart + i,
+                length,
+                rarity
+            }));
 
-            const codeData = newCodes.map((code, i) => {
-                const ticketDoc = availableTickets[i];
-                ticketDoc.status = "to-claim";
-                ticketDoc.save();
-
-                return {
-                    expiration,
-                    code,
-                    items,
-                    ticket: ticketDoc._id,
-                    type,
-                    isUsed: false,
-                    index: lastCodeIndex + i,
-                    length,
-                    rarity
-                };
+            const percentage = Math.round(((batchEnd) / codeamount) * 40) + 50;
+            io.emit('generate-progress', {
+                percentage,
+                status: `Saving In-Game codes for batch ${tempbatch}. Progress: ${batchEnd.toLocaleString()}/${codeamount.toLocaleString()}`
             });
 
-            await saveWithFallback(codeData);
-            ticketsswitchcase(rarity, codeamount, { $inc: { totaltoclaim: codeamount, totaltogenerate: -codeamount } });
-            await Analytics.findOneAndUpdate({}, { $inc: { totaltoclaim: codeamount, totaltogenerate: -codeamount } }, { new: true });
+            await saveWithFallback(batchData);
 
-        } else {
-            let tempbatch = 1;
-            for (let batchStart = 0; batchStart < codeamount; batchStart += BATCH_SIZE) {
-                const batchEnd = Math.min(batchStart + BATCH_SIZE, codeamount);
-                const batchSize = batchEnd - batchStart;
-                const newCodes = await generateBatchUniqueCodes(batchSize);
+            const analyticsUpdate = { $inc: { totaltoclaim: batchData.length } };
+            if (type === 'ingame') ingameswitchcase(rarity, batchData.length, analyticsUpdate);
+            else if (type === 'exclusive') exclusiveswitchcase(rarity, batchData.length, analyticsUpdate);
+            else if (type === 'chest') chestswitchcase(rarity, batchData.length, analyticsUpdate);
+            else if (type === 'robux') robuxswitchcase(rarity, batchData.length, analyticsUpdate);
+            else if (type === 'ticket') ticketsswitchcase(rarity, batchData.length, analyticsUpdate);
 
-                const batchData = newCodes.map((code, i) => ({
-                    expiration,
-                    code,
-                    items,
-                    type,
-                    isUsed: false,
-                    index: lastCodeIndex + batchStart + i,
-                    length,
-                    rarity
-                }));
-
-                const percentage = Math.round(((batchEnd) / codeamount) * 40) + 50;
-                io.emit('generate-progress', {
-                    percentage,
-                    status: `Saving In-Game codes for batch ${tempbatch}. Progress: ${batchEnd.toLocaleString()}/${codeamount.toLocaleString()}`
-                });
-
-                await saveWithFallback(batchData);
-
-                const analyticsUpdate = { $inc: { totaltoclaim: batchData.length } };
-                if (type === 'ingame') ingameswitchcase(rarity, batchData.length, analyticsUpdate);
-                else if (type === 'exclusive') exclusiveswitchcase(rarity, batchData.length, analyticsUpdate);
-                else if (type === 'chest') chestswitchcase(rarity, batchData.length, analyticsUpdate);
-                else if (type === 'robux') robuxswitchcase(rarity, batchData.length, analyticsUpdate);
-
-                await Analytics.findOneAndUpdate({}, analyticsUpdate, { new: true });
-                tempbatch++;
-            }
+            await Analytics.findOneAndUpdate({}, analyticsUpdate, { new: true });
+            tempbatch++;
         }
 
         io.to(socketid).emit('generate-progress', { percentage: 100, status: 'Complete', success: true });
@@ -1657,6 +1625,7 @@ exports.editmultiplecodes = async (req, res) => {
         });
     }
 
+    console.log(updatedata);
     if (Object.keys(updatedata).length === 0) {
         return res.status(400).json({ 
             message: "bad-request", 
@@ -1694,13 +1663,6 @@ exports.editmultiplecodes = async (req, res) => {
         { _id: { $in: ids } },
         { $set: updatedata }
     );
-
-    // Restore ticket/robux status if needed
-    for (const code of originalCodes) {
-        if (code.type === "ticket" && (updatedata.type && updatedata.type !== "ticket" || updatedata.ticket === null || updatedata.ticket === undefined) && code.ticket) {
-            await Ticket.findByIdAndUpdate(code.ticket, { status: "to-generate" });
-        }
-    }
 
     return res.json({ message: "success" });
 };
