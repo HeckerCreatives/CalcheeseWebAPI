@@ -1164,7 +1164,6 @@ exports.redeemcode = async (req, res) => {
     const { code, guardian, email, contact, address, robloxid } = req.body;
     const picture = req.file ? req.file.filename : undefined;
 
-
     if (!code) return res.status(400).json({ message: "bad-request", data: "Please provide a code!" });
     if (!robloxid) return res.status(400).json({ message: "bad-request", data: "Please provide your Roblox ID!" });
 
@@ -1204,7 +1203,7 @@ exports.redeemcode = async (req, res) => {
     // robux redeem code
     if (codeExists.type === "robux") {
         
-        if (!robloxid || !email || !address) return res.status(400).json({ message: "bad-request", data: "Please fill in all the required fields!" });
+        if (!robloxid || !email) return res.status(400).json({ message: "bad-request", data: "Please fill in all the required fields!" });
         if (codeExists.status !== "pre-claimed") return res.status(400).json({ message: "bad-request", data: "Ticket is not available!" });
         // save details to code
         codeExists.name = robloxid;
@@ -1244,18 +1243,7 @@ exports.redeemcode = async (req, res) => {
     if (codeExists.type === "ticket") {
         if (!guardian || !contact || !address || !robloxid || !email || !picture) return res.status(400).json({ message: "bad-request", data: "Please fill in all the required fields!" });
 
-        const ticket = await Ticket.findById(codeExists.ticket)
-            .then(data => data)
-            .catch(err => {
-                console.log(`There's a problem checking the ticket. Error ${err}`);
-                return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
-            });
-
-        if (!ticket) return res.status(400).json({ message: "bad-request", data: "Ticket does not exist!" });
         if (codeExists.status !== "pre-claimed") return res.status(400).json({ message: "bad-request", data: "Ticket is not available!" });
-
-        ticket.status = "claimed";
-        await ticket.save();
 
         // save details to code
         codeExists.name = robloxid;
