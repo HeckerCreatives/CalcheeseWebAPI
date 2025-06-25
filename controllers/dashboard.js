@@ -321,7 +321,7 @@ exports.redeemCodeStatusAnalytics = async (req, res) => {
 
 exports.getregionalAnalytics = async (req, res) => {
 
-    const { charttype = 2} = req.query;
+    const { charttype = 1} = req.query;
 
     const data = await Code.aggregate([
     {
@@ -356,10 +356,9 @@ exports.getregionalAnalytics = async (req, res) => {
         return res.status(404).json({ message: "not-found", data: "No regional analytics data found." });
     }
 
-    // sort alphabetically by city name
     data.sort((a, b) => a._id.localeCompare(b._id));
     const finalData = data.map(item => ({
-        city: item._id,
+        area: item._id,
         count: item.count
     }));
 
