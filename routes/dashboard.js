@@ -8,4 +8,7 @@ router
  .get("/getredeemcodeanalytics", protectsuperadmin, redeemCodeAnalytics)
  .get("/getredeemcodeanalyticsstatus", protectsuperadmin, redeemCodeStatusAnalytics)
  .get("/getregionalanlytics", protectsuperadmin, getregionalAnalytics)
+ .get("/gettypeclaimbarchart", protectsuperadmin, gettypeclaimbarchart)
+ .get("/getpiechartanalytics", protectsuperadmin, getpiechartanalytics)
+ .post("/syncTypeClaimAnalytics", syncTypeClaimAnalytics)
 module.exports = router
