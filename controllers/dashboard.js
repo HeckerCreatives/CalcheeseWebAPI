@@ -360,29 +360,30 @@ exports.getregionalAnalytics = async (req, res) => {
 }
 
 exports.getCodeDistribution = async (req, res) => {
-    try {
-        const data = await Code.aggregate([
-            {
-                $group: {
-                    _id: "$type", 
-                    total: { $sum: 1 }
-                }
-            },
-            {
-                $project: {
-                    _id: 0,
-                    type: "$_id",
-                    total: 1
-                }
-            }
-        ]);
+  try {
+    const data = await Code.aggregate([
+      {
+        $group: {
+          _id: "$type",
+          total: { $sum: 1 }
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          type: "$_id",
+          total: 1
+        }
+      }
+    ], { allowDiskUse: true })
+    
+    res.status(200).json({ success: true, data })
+  } catch (error) {
+    console.error("Error in getCodeDistribution:", error)
+    res.status(500).json({ success: false, message: "Server Error" })
+  }
+}
 
-        res.status(200).json({ success: true, data });
-    } catch (error) {
-        console.error("Error in getCodeDistribution:", error);
-        res.status(500).json({ success: false, message: "Server Error" });
-    }
-};
 
 
 exports.getCodeRedemption = async (req, res) => {
@@ -399,7 +400,7 @@ exports.getCodeRedemption = async (req, res) => {
           total: { $sum: 1 }
         }
       }
-    ])
+    ], { allowDiskUse: true })
 
     const groupedResult = {}
 
@@ -424,3 +425,4 @@ exports.getCodeRedemption = async (req, res) => {
     res.status(500).json({ success: false, message: "Server Error" })
   }
 }
+
