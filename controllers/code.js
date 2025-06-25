@@ -1478,7 +1478,7 @@ exports.exportCodesCSV = async (req, res) => {
 
         // Start export in background
         (async () => {
-            let batchOffset = 0;
+        let batchOffset = 0;
             for (let fileNum = 1; batchOffset < (end - start); fileNum++) {
                 const currentLimit = Math.min(CHUNK_SIZE, end - start - batchOffset);
                 if (currentLimit <= 0) break;
@@ -1492,6 +1492,7 @@ exports.exportCodesCSV = async (req, res) => {
                     status: `Fetching data for batch ${fileNum}...`
                 });
 
+                // FIX: skip should be (start + batchOffset)
                 const codes = await Code.find(filter)
                     .select('code')
                     .sort({ index: -1 })
@@ -1528,12 +1529,12 @@ exports.exportCodesCSV = async (req, res) => {
                 });
 
                 fileList.push(filename);
-                batchOffset += CHUNK_SIZE;
+                batchOffset += currentLimit;
             }
-                io.emit('export-progress', {
-                    percentage: 100,
-                    status: `Creating ZIP archive with ${fileList.length} files...`
-                });
+        io.emit('export-progress', {
+            percentage: 100,
+            status: `Creating ZIP archive with ${fileList.length} files...`
+        });
             
             // Create ZIP
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-');

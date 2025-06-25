@@ -58,14 +58,32 @@ exports.getItems = async (req, res) => {
             return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
         });
 
-    const finalData = items.map(item => ({
-        id: item._id,
-        category: item.category,
-        rarity: item.rarity || "none",
-        itemname: item.itemname,
-        quantity: item.quantity,
-        createdAt: moment(item.createdAt).format("YYYY-MM-DD"),
-    }));
+    const rarityOrder = {
+        'common': 1,
+        'uncommon': 2,
+        'rare': 3,
+        'epic': 4,
+        'legendary': 5,
+        'none': 0
+    };
+
+    const finalData = items
+        .sort((a, b) => {
+            // First sort by category
+            if (a.category < b.category) return -1;
+            if (a.category > b.category) return 1;
+            
+            // Then sort by rarity using the defined order
+            return (rarityOrder[a.rarity || 'none'] || 0) - (rarityOrder[b.rarity || 'none'] || 0);
+        })
+        .map(item => ({
+            id: item._id,
+            category: item.category,
+            rarity: item.rarity || "none",
+            itemname: item.itemname,
+            quantity: item.quantity,
+            createdAt: moment(item.createdAt).format("YYYY-MM-DD"),
+        }));
 
     return res.json({
         message: "success",
