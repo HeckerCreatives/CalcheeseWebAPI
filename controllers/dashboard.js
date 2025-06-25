@@ -324,7 +324,13 @@ exports.getregionalAnalytics = async (req, res) => {
     const { charttype } = req.query;
 
     const data = await Code.aggregate([
-    { $match: { isUsed: true } },
+    {
+        $match: {
+            isUsed: true,
+            archived: { $ne: true },
+            type: 'ticket'
+        }
+    },
     {
         $addFields: {
         city: {
