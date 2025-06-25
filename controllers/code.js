@@ -1095,7 +1095,7 @@ exports.checkcode = async (req, res) => {
         codeExists.status = "claimed";
 
         await Analytics.findOneAndUpdate({},
-            { $inc: { totalclaimed: 1, totaltoclaim: -1 } },
+            { $inc: { totalclaimed: 1, totaltoclaim: -1, [`totalclaimed${codeExists.type}`]: 1, [`totalclaimed${codeExists.type}`]: -1 } },
             { new: true }
         )
         .then(data => data)
@@ -1214,7 +1214,7 @@ exports.redeemcode = async (req, res) => {
 
         await codeExists.save();
         await Analytics.findOneAndUpdate({},
-            { $inc: { totalclaimed: 1, totaltoclaim: -1 } },
+            { $inc: { totalclaimed: 1, totaltoclaim: -1, [`totalclaimed${codeExists.type}`]: 1, [`totalclaimed${codeExists.type}`]: -1 } },
             { new: true }
         )
         .then(data => data)
@@ -1687,9 +1687,15 @@ async function updateAnalyticsOnArchive(code, direction = -1) {
     if (code.type && code.rarity) {
         const typeRarityField = `total${code.type}${code.rarity}`;
         analyticsUpdate.$inc[typeRarityField] = direction;
+        if (code.status === "claimed" || code.isUsed === true) {
+            analyticsUpdate.$inc[`totalclaimed${code.type}`] = direction;
+        } else {
+            analyticsUpdate.$inc[`totalunclaimed${code.type}`] = direction;
+        }
 
         console.log(`${analyticsUpdate.$inc[typeRarityField]} for ${typeRarityField}`);
     }
+
 
     // Update archive counter with opposite direction
     analyticsUpdate.$inc.totalarchived = -direction;
@@ -1704,11 +1710,35 @@ async function updateAnalyticsOnEdit(original, updated) {
 
     // Status change
     if (updated.status && updated.status !== original.status) {
-        if (original.status === "claimed") analyticsUpdate.$inc.totalclaimed = -1;
-        if (updated.status === "claimed") analyticsUpdate.$inc.totalclaimed = 1;
-        if (original.status === "to-claim") analyticsUpdate.$inc.totaltoclaim = -1;
-        if (updated.status === "to-claim") analyticsUpdate.$inc.totaltoclaim = 1;
-        // ...repeat for other statuses
+        // Handle original status decrements
+        if (original.status === "claimed") {
+            analyticsUpdate.$inc.totalclaimed = -1;
+            analyticsUpdate.$inc[`totalclaimed${original.type}`] = -1;
+        } else if (original.status === "to-claim") {
+            analyticsUpdate.$inc.totaltoclaim = -1;
+            analyticsUpdate.$inc[`totalunclaimed${original.type}`] = -1;
+        } else if (original.status === "approved") {
+            analyticsUpdate.$inc.totalapproved = -1;
+        } else if (original.status === "rejected") {
+            analyticsUpdate.$inc.totalrejected = -1;
+        } else if (original.status === "to-generate") {
+            analyticsUpdate.$inc.totaltogenerate = -1;
+        }
+
+        // Handle new status increments
+        if (updated.status === "claimed") {
+            analyticsUpdate.$inc.totalclaimed = 1;
+            analyticsUpdate.$inc[`totalclaimed${original.type}`] = 1;
+        } else if (updated.status === "to-claim") {
+            analyticsUpdate.$inc.totaltoclaim = 1;
+            analyticsUpdate.$inc[`totalunclaimed${original.type}`] = 1;
+        } else if (updated.status === "approved") {
+            analyticsUpdate.$inc.totalapproved = 1;
+        } else if (updated.status === "rejected") {
+            analyticsUpdate.$inc.totalrejected = 1;
+        } else if (updated.status === "to-generate") {
+            analyticsUpdate.$inc.totaltogenerate = 1;
+        }
     }
 
     // Type/rarity change
@@ -1718,15 +1748,26 @@ async function updateAnalyticsOnEdit(original, updated) {
     const newRarity = updated.rarity || original.rarity;
 
     if (oldType && oldRarity && (oldType !== newType || oldRarity !== newRarity)) {
-        // Decrement old
+        // Decrement old type/rarity combination
         analyticsUpdate.$inc[`total${oldType}${oldRarity}`] = -1;
-        // Increment new
+        
+        // If status is claimed, update type-specific claimed counter
+        if (original.status === "claimed") {
+            analyticsUpdate.$inc[`totalclaimed${oldType}`] = -1;
+            analyticsUpdate.$inc[`totalclaimed${newType}`] = 1;
+        } else {
+            analyticsUpdate.$inc[`totalunclaimed${oldType}`] = -1;
+            analyticsUpdate.$inc[`totalunclaimed${newType}`] = 1;
+        }
+        
+        // Increment new type/rarity combination
         analyticsUpdate.$inc[`total${newType}${newRarity}`] = 1;
     }
 
     // Only update if there are changes
     if (Object.keys(analyticsUpdate.$inc).length > 0) {
-        await Analytics.findOneAndUpdate({}, analyticsUpdate);
+        console.log('Updating analytics:', analyticsUpdate);
+        await Analytics.findOneAndUpdate({}, analyticsUpdate, { new: true });
     }
 }
 
@@ -1749,11 +1790,26 @@ exports.resetcode = async (req, res) => {
 
     // check code status
 
-    if (code.status !== "claimed" && code.status !== "approved" && code.status !== "rejected") {
-        await Analytics.findOneAndUpdate({},
-            { $inc: { totaltoclaim: 1, totalclaimed: -1 } },
-            { new: true })
-    }
+        if (
+            code.status === "claimed" ||
+            code.status === "approved" ||
+            code.status === "rejected"
+        ) {
+            // Build analytics update
+            const analyticsUpdate = {
+                $inc: {
+                    totaltoclaim: 1,
+                    totalclaimed: code.status === "claimed" ? -1 : 0,
+                    totalapproved: code.status === "approved" ? -1 : 0,
+                    [`total${code.type}${code.rarity}`]: code.status === "claimed" ? -1 : 0,
+                    [`total${code.type}${code.rarity}`]: code.status === "approved" ? -1 : 0,
+                    [`total${code.type}claimed`]: code.status === "claimed" ? -1 : 0,
+                    [`total${code.type}unclaimed`]: 1
+                }
+            };
+
+            await Analytics.findOneAndUpdate({}, analyticsUpdate, { new: true });
+        }
 
     code.isUsed = false;
     code.status = "to-claim"; // Reset status to "to-claim" or "to-generate" based on your logic

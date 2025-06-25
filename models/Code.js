@@ -102,6 +102,8 @@ CodeSchema.pre('save', async function(next) {
     next();
 });
 
+CodeSchema.index({ type: 1, isUsed: 1 });
+
 const Code = mongoose.model("Code", CodeSchema)
 
 module.exports = Code ;

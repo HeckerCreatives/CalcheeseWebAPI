@@ -126,6 +126,46 @@ const AnalyticsSchema = new mongoose.Schema(
             type: Number,
             default: 0,
         },
+        totalclaimedingame: {
+            type: Number,
+            default: 0,
+        },
+        totalclaimedexclusive: {
+            type: Number,
+            default: 0,
+        },
+        totalclaimedchest: {
+            type: Number,
+            default: 0,
+        },
+        totalclaimedrobux: {
+            type: Number,
+            default: 0,
+        },
+        totalclaimedticket: {
+            type: Number,
+            default: 0,
+        },
+        totalunclaimedingame: {
+            type: Number,
+            default: 0,
+        },
+        totalunclaimedexclusive: {
+            type: Number,
+            default: 0,
+        },
+        totalunclaimedchest: {
+            type: Number,
+            default: 0,
+        },
+        totalunclaimedrobux: {
+            type: Number,
+            default: 0,
+        },
+        totalunclaimedticket: {
+            type: Number,
+            default: 0,
+        }
     },
     {
         timestamps: true,

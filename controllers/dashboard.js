@@ -358,3 +358,123 @@ exports.getregionalAnalytics = async (req, res) => {
     return res.json({ message: "success", data: finalData });
 
 }
+
+
+
+
+exports.gettypeclaimbarchart = async (req, res) => {
+    try {
+        const analytics = await Analytics.findOne();
+        if (!analytics) {
+            return res.status(404).json({ message: "not-found", data: "Analytics not found." });
+        }
+
+        console.log("Analytics data:", analytics);
+        // Build result from analytics fields
+        const types = ["robux", "ticket", "exclusive", "chest", "ingame"];
+        const result = {};
+        types.forEach(type => {
+            result[type] = {
+                claimed: analytics[`totalclaimed${type}`] || 0,
+                unclaimed: analytics[`totalunclaimed${type}`] || 0
+            };
+        });
+
+        console.log("Type-claim barchart data:", result);
+        return res.json({ message: "success", data: result });
+
+        // can i add something here that updates the analytics data?
+    } catch (err) {
+        console.log("Error generating type-claim barchart:", err);
+        return res.status(500).json({ message: "server-error", data: "Failed to generate barchart data." });
+    }
+};
+
+exports.getpiechartanalytics = async (req, res) => {
+    // its just the total of the different types of codes
+
+    const analytics = await Analytics.findOne()
+        .then(data => data)
+        .catch(err => {
+            console.log(`There's a problem getting the analytics data. Error ${err}`);
+            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+        });
+
+    if (!analytics) {
+        return res.status(404).json({ message: "not-found", data: "Analytics not found." });
+    }
+
+    const totalingame = analytics.totalclaimedingame + analytics.totalunclaimedingame;
+    const totalrobux = analytics.totalclaimedrobux + analytics.totalunclaimedrobux;
+    const totalticket = analytics.totalclaimedticket + analytics.totalunclaimedticket;
+    const totalexclusive = analytics.totalclaimedexclusive + analytics.totalunclaimedexclusive;
+    const totalchest = analytics.totalclaimedchest + analytics.totalunclaimedchest;
+
+    const result = {
+        ingame: {
+            claimed: analytics.totalclaimedingame,
+            unclaimed: analytics.totalunclaimedingame,
+            total: totalingame
+        },
+        robux: {
+            claimed: analytics.totalclaimedrobux,
+            unclaimed: analytics.totalunclaimedrobux,
+            total: totalrobux
+        },
+        ticket: {
+            claimed: analytics.totalclaimedticket,
+            unclaimed: analytics.totalunclaimedticket,
+            total: totalticket
+        },
+        exclusive: {
+            claimed: analytics.totalclaimedexclusive,
+            unclaimed: analytics.totalunclaimedexclusive,
+            total: totalexclusive
+        },
+        chest: {
+            claimed: analytics.totalclaimedchest,
+            unclaimed: analytics.totalunclaimedchest,
+            total: totalchest
+        }
+    };
+
+    return res.json({ message: "success", data: result });
+}
+
+
+exports.syncTypeClaimAnalytics = async (req, res) => {
+    try {
+        // Aggregate counts for each type and isUsed
+        const data = await Code.aggregate([
+            { $match: { archived: { $ne: true } } },
+            {
+                $group: {
+                    _id: { type: "$type", isUsed: "$isUsed" },
+                    count: { $sum: 1 }
+                }
+            }
+        ]);
+
+        // Prepare update object with correct field names
+        const update = {};
+        data.forEach(item => {
+            const type = item._id.type;
+            const isUsed = item._id.isUsed;
+            if (!type) return; // skip if type is missing
+            // Use the correct field name order: totalclaimed{type} / totalunclaimed{type}
+            if (isUsed) {
+                update[`totalclaimed${type}`] = item.count;
+            } else {
+                update[`totalunclaimed${type}`] = item.count;
+            }
+        });
+
+        // Update the Analytics document
+        await Analytics.findOneAndUpdate({}, { $set: update }, { upsert: true });
+
+        return res.json({ message: "success", data: update });
+    } catch (err) {
+        console.log("Error syncing type-claim analytics:", err);
+        return res.status(500).json({ message: "server-error", data: "Failed to sync analytics data." });
+    }
+};
