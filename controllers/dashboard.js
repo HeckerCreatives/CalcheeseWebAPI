@@ -350,7 +350,6 @@ exports.getregionalAnalytics = async (req, res) => {
         return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
     });
 
-    console.log("Regional analytics data:", data);
 
     if (!data || data.length === 0) {
         return res.status(404).json({ message: "not-found", data: "No regional analytics data found." });
