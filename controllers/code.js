@@ -1471,16 +1471,17 @@ exports.exportCodesCSV = async (req, res) => {
         let batch = 0;
         let fileList = [];
         let totalExported = 0;
-        let totalToExport = end - start;
-
+        const startNum = parseInt(start) || 0;
+        const endNum = parseInt(end) || 0;
+        const totalToExport = endNum - startNum;
         // Immediately return success to client
         res.json({ message: "success", status: "export-started" });
 
         // Start export in background
         (async () => {
         let batchOffset = 0;
-            for (let fileNum = 1; batchOffset < (end - start); fileNum++) {
-                const currentLimit = Math.min(CHUNK_SIZE, end - start - batchOffset);
+            for (let fileNum = 1; batchOffset < (endNum - startNum); fileNum++) {
+                 const currentLimit = Math.min(CHUNK_SIZE, endNum - startNum - batchOffset);
                 if (currentLimit <= 0) break;
 
                 console.log(`Exporting batch ${fileNum} with limit ${currentLimit}...`);
@@ -1496,7 +1497,7 @@ exports.exportCodesCSV = async (req, res) => {
                 const codes = await Code.find(filter)
                     .select('code')
                     .sort({ index: -1 })
-                    .skip(start + batchOffset)
+                    .skip(startNum + batchOffset)
                     .limit(currentLimit)
                     .lean();
 
