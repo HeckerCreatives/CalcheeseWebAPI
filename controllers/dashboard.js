@@ -358,3 +358,69 @@ exports.getregionalAnalytics = async (req, res) => {
     return res.json({ message: "success", data: finalData });
 
 }
+
+exports.getCodeDistribution = async (req, res) => {
+    try {
+        const data = await Code.aggregate([
+            {
+                $group: {
+                    _id: "$type", 
+                    total: { $sum: 1 }
+                }
+            },
+            {
+                $project: {
+                    _id: 0,
+                    type: "$_id",
+                    total: 1
+                }
+            }
+        ]);
+
+        res.status(200).json({ success: true, data });
+    } catch (error) {
+        console.error("Error in getCodeDistribution:", error);
+        res.status(500).json({ success: false, message: "Server Error" });
+    }
+};
+
+
+exports.getCodeRedemption = async (req, res) => {
+  try {
+    const rawData = await Code.aggregate([
+      {
+        $match: {
+          status: { $in: ["claimed", "to-claim"] }
+        }
+      },
+      {
+        $group: {
+          _id: { type: "$type", status: "$status" },
+          total: { $sum: 1 }
+        }
+      }
+    ])
+
+    const groupedResult = {}
+
+    for (const item of rawData) {
+      const { type, status } = item._id
+      if (!groupedResult[type]) {
+        groupedResult[type] = { type, claimed: 0, unclaimed: 0 }
+      }
+
+      if (status === "claimed") {
+        groupedResult[type].claimed = item.total
+      } else if (status === "to-claim") {
+        groupedResult[type].unclaimed = item.total
+      }
+    }
+
+    const data = Object.values(groupedResult)
+
+    res.status(200).json({ success: true, data })
+  } catch (error) {
+    console.error("Error in getCodeRedemption:", error)
+    res.status(500).json({ success: false, message: "Server Error" })
+  }
+}
