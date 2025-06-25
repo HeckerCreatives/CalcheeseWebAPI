@@ -321,7 +321,7 @@ exports.redeemCodeStatusAnalytics = async (req, res) => {
 
 exports.getregionalAnalytics = async (req, res) => {
 
-    const { charttype = 1} = req.query;
+    const { charttype = 0} = req.query;
 
     const data = await Code.aggregate([
     {
