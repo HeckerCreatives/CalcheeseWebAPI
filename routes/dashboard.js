@@ -1,4 +1,4 @@
-const { getcardanalytics, redeemCodeAnalytics, redeemCodeStatusAnalytics, getregionalAnalytics, gettypeclaimbarchart, syncTypeClaimAnalytics, getpiechartanalytics } = require("../controllers/dashboard")
+const { getcardanalytics, redeemCodeAnalytics, redeemCodeStatusAnalytics, getregionalAnalytics, gettypeclaimbarchart, syncTypeClaimAnalytics, getpiechartanalytics, syncAllAnalytics } = require("../controllers/dashboard")
 const { protectsuperadmin } = require("../middleware/middleware")
 
 const router = require("express").Router()
@@ -11,4 +11,5 @@ router
  .get("/gettypeclaimbarchart", protectsuperadmin, gettypeclaimbarchart)
  .get("/getpiechartanalytics", protectsuperadmin, getpiechartanalytics)
  .post("/syncTypeClaimAnalytics", syncTypeClaimAnalytics)
+ .post("/syncAllAnalytics", syncAllAnalytics)
 module.exports = router

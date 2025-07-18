@@ -15,6 +15,7 @@ const crypto = require('crypto');
 const Inventory = require("../models/Inventory");
 const Player = require("../models/Player");
 const { checkmaintenance } = require("../utils/maintenancetools");
+const { getmanufacturerbyname } = require("../utils/manufacturerutil");
 
 const CHARSET = 'ACDEFHJKLMNPRTUVXWY379';
 const CODE_LENGTH = 9;
@@ -729,7 +730,7 @@ exports.getcodes = async (req, res) => {
             $limit: pageOptions.limit,
         },
         {
-            $sort: { index: -1 }
+            $sort: { index: -1, _id: -1 }
         }
     ])
         .then(data => data)
@@ -746,7 +747,7 @@ exports.getcodes = async (req, res) => {
             code: code.code,
             status: code.status,
             index: code.index,
-             items: code.items.map(item => ({
+            items: code.items.map(item => ({
                 id: item._id,
                 itemid: item.itemid,
                 itemname: item.itemname,
@@ -1826,3 +1827,131 @@ exports.resetcode = async (req, res) => {
         }
     });
 }
+
+
+exports.generateitemsoncode = async (req, res) => {
+
+    const { manufacturer, type, rarity, amount, itemid, codesamount, socketid } = req.body;
+
+    if (!manufacturer || !type || !rarity || !amount || !itemid || !codesamount) {
+        return res.status(400).json({ message: "bad-request", data: "Please provide all required fields!" });
+    }
+
+    const manufact = await getmanufacturerbyname(manufacturer);
+
+    if (!manufact) {
+        return res.status(400).json({ message: "bad-request", data: "Invalid manufacturer type!" });
+    }
+
+    if (!['robux', 'ticket', 'ingame', 'exclusive', 'chest'].includes(type.toLowerCase())) {
+        return res.status(400).json({ message: "bad-request", data: "Invalid type! Must be one of: robux, ticket, ingame, exclusive and chest." });
+    }
+    if (!['common', 'uncommon', 'rare', 'epic', 'legendary'].includes(rarity.toLowerCase())) {
+        return res.status(400).json({ message: "bad-request", data: "Invalid rarity! Must be one of: common, uncommon, rare, epic, legendary." });
+    }
+    if (amount <= 0 || codesamount <= 0) {
+        return res.status(400).json({ message: "bad-request", data: "Amount and codes amount must be greater than 0!" });
+    }
+    if (!mongoose.Types.ObjectId.isValid(itemid)) {
+        return res.status(400).json({ message: "bad-request", data: "Invalid item ID!" });
+    }
+
+    // Return success immediately to avoid timeout
+    res.json({ message: "success", status: "generation-started" });
+
+    // Start background processing
+    (async () => {
+        const session = await mongoose.startSession();
+        session.startTransaction();
+
+        try {
+            const items = await Item.findById(itemid).session(session);
+
+            if (!items) {
+                await session.abortTransaction();
+                session.endSession();
+                io.to(socketid).emit('generate-items-progress', {
+                    percentage: 100,
+                    status: 'failed',
+                    message: "Item does not exist!",
+                    success: false
+                });
+                return;
+            }
+
+            const gtId = manufact.gt;
+            const lteId = manufact.lte;
+            const idQuery = gtId ? { _id: { $gt: gtId, $lte: lteId } } : { _id: { $lte: lteId } };
+            const batchSize = 10000;
+            let processed = 0;
+            let batchNum = 1;
+
+            while (processed < codesamount) {
+                const remaining = codesamount - processed;
+                const currentBatchSize = Math.min(batchSize, remaining);
+
+                // Fetch a batch of codes with items: null
+                const codesBatch = await Code.find({ items: null, ...idQuery }, '_id')
+                    .sort({ index: -1 })
+                    .limit(currentBatchSize)
+                    .session(session);
+
+                if (codesBatch.length === 0) {
+                    await session.abortTransaction();
+                    session.endSession();
+                    io.to(socketid).emit('generate-items-progress', {
+                        percentage: 100,
+                        status: 'failed',
+                        message: "No available codes to generate items for!",
+                        success: false
+                    });
+                    return;
+                }
+
+                const bulkOps = codesBatch.map(code => ({
+                    updateOne: {
+                        filter: { _id: code._id },
+                        update: { $set: { items: [items._id], status: "to-claim", type: type, rarity: rarity } }
+                    }
+                }));
+
+                await Code.bulkWrite(bulkOps, { session });
+                processed += codesBatch.length;
+
+                const percentage = Math.round((processed / codesamount) * 100);
+                io.to(socketid).emit('generate-items-progress', {
+                    percentage,
+                    status: `Processing batch ${batchNum} (${processed}/${codesamount})`,
+                    processed,
+                    total: codesamount,
+                    success: true
+                });
+                batchNum++;
+            }
+
+            await session.commitTransaction();
+            session.endSession();
+
+            io.to(socketid).emit('generate-items-progress', {
+                percentage: 100,
+                status: 'Complete',
+                processed,
+                type,
+                rarity,
+                item: items.name,
+                manufacturer: manufact.name,
+                success: true
+            });
+
+        } catch (error) {
+            await session.abortTransaction();
+            session.endSession();
+            io.to(socketid).emit('generate-items-progress', {
+                percentage: 100,
+                status: 'failed',
+                message: error.message,
+                success: false
+            });
+        }
+    })();
+};
