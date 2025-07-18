@@ -1162,7 +1162,7 @@ exports.checkcode = async (req, res) => {
 
 exports.redeemcode = async (req, res) => {
 
-    const { code, guardian, email, contact, address, robloxid } = req.body;
+    const { code, guardian, email, contact, address, robloxid, type } = req.body;
     const picture = req.file ? req.file.filename : undefined;
 
     if (!code) return res.status(400).json({ message: "bad-request", data: "Please provide a code!" });
@@ -1193,6 +1193,7 @@ exports.redeemcode = async (req, res) => {
             return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
         });
 
+    
     if (!codeExists) return res.status(400).json({ message: "bad-request", data: "Code does not exist!" });
     if (codeExists.isUsed) return res.status(400).json({ message: "bad-request", data: "Code has already been redeemed!" });
     if (codeExists.archived === true) {
@@ -1200,6 +1201,10 @@ exports.redeemcode = async (req, res) => {
             message: "bad-request",
             data: "Code is archived and cannot be redeemed!",
         });
+    }
+
+    if (codeExists.type !== type) {
+        return res.status(400).json({ message: "bad-request", data: "Code type does not match!" });
     }
     // robux redeem code
     if (codeExists.type === "robux") {
