@@ -665,7 +665,7 @@ async function handleCodeGeneration(data) {
 
 exports.getcodes = async (req, res) => {
 
-    const { page, limit, type, rarity, item, status, search, archive, lastid } = req.query;
+    const { page, limit, type, rarity, item, status, search, archive, lastid, manufacturer } = req.query;
     const pageOptions = {
         page: parseInt(page) || 0,
         limit: parseInt(limit) || 10,
@@ -702,6 +702,15 @@ exports.getcodes = async (req, res) => {
     
     if (lastid && mongoose.isValidObjectId(lastid)) {
         filter._id = { $gt: new mongoose.Types.ObjectId(lastid) };
+    }
+
+    const manufact = getmanufacturerbyname(manufacturer);
+    
+    if (manufact !== null) {
+
+        let gtindex = manufact.gtindex ? manufact.gtindex : 0;
+        let index = manufact.index ? manufact.index : 0;
+        filter.index = { $lte: index, $gt: gtindex };
     }
 
     let totalDocs = 0;
