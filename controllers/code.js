@@ -1831,9 +1831,9 @@ exports.resetcode = async (req, res) => {
 
 exports.generateitemsoncode = async (req, res) => {
 
-    const { manufacturer, type, rarity, amount, itemid, codesamount, socketid } = req.body;
+    const { manufacturer, type, rarity, itemid, codesamount, socketid } = req.body;
 
-    if (!manufacturer || !type || !rarity || !amount || !itemid || !codesamount) {
+    if (!manufacturer || !type || !rarity || !itemid || !codesamount) {
         return res.status(400).json({ message: "bad-request", data: "Please provide all required fields!" });
     }
 
@@ -1849,8 +1849,8 @@ exports.generateitemsoncode = async (req, res) => {
     if (!['common', 'uncommon', 'rare', 'epic', 'legendary'].includes(rarity.toLowerCase())) {
         return res.status(400).json({ message: "bad-request", data: "Invalid rarity! Must be one of: common, uncommon, rare, epic, legendary." });
     }
-    if (amount <= 0 || codesamount <= 0) {
-        return res.status(400).json({ message: "bad-request", data: "Amount and codes amount must be greater than 0!" });
+    if (codesamount <= 0) {
+        return res.status(400).json({ message: "bad-request", data: "codes amount must be greater than 0!" });
     }
     if (!mongoose.Types.ObjectId.isValid(itemid)) {
         return res.status(400).json({ message: "bad-request", data: "Invalid item ID!" });
