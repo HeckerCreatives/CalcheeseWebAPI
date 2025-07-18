@@ -1193,7 +1193,6 @@ exports.redeemcode = async (req, res) => {
             return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
         });
 
-    
     if (!codeExists) return res.status(400).json({ message: "bad-request", data: "Code does not exist!" });
     if (codeExists.isUsed) return res.status(400).json({ message: "bad-request", data: "Code has already been redeemed!" });
     if (codeExists.archived === true) {
@@ -1868,8 +1867,10 @@ exports.generateitemsoncode = async (req, res) => {
     (async () => {
         const session = await mongoose.startSession();
         session.startTransaction();
+        let transactionActive = false;
 
         try {
+            transactionActive = true;
             const items = await Item.findById(itemid).session(session);
 
             if (!items) {
@@ -1937,6 +1938,7 @@ exports.generateitemsoncode = async (req, res) => {
             }
 
             await session.commitTransaction();
+            transactionActive = false;
             session.endSession();
 
             io.to(socketid).emit('generate-items-progress', {
@@ -1951,7 +1953,10 @@ exports.generateitemsoncode = async (req, res) => {
             });
 
         } catch (error) {
-            await session.abortTransaction();
+            if (transactionActive) {
+                await session.abortTransaction();
+                transactionActive = false;
+            }
             session.endSession();
             io.to(socketid).emit('generate-items-progress', {
                 percentage: 100,
