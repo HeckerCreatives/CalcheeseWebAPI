@@ -1842,11 +1842,11 @@ exports.generateitemsoncode = async (req, res) => {
         return res.status(400).json({ message: "bad-request", data: "Please provide all required fields!" });
     }
 
-    const manufact = await getmanufacturerbyname(manufacturer);
+    // const manufact = await getmanufacturerbyname(manufacturer);
 
-    if (!manufact) {
-        return res.status(400).json({ message: "bad-request", data: "Invalid manufacturer type!" });
-    }
+    // if (!manufact) {
+    //     return res.status(400).json({ message: "bad-request", data: "Invalid manufacturer type!" });
+    // }
 
     if (!['robux', 'ticket', 'ingame', 'exclusive', 'chest'].includes(type.toLowerCase())) {
         return res.status(400).json({ message: "bad-request", data: "Invalid type! Must be one of: robux, ticket, ingame, exclusive and chest." });
@@ -1884,9 +1884,9 @@ exports.generateitemsoncode = async (req, res) => {
                 return;
             }
 
-            const gtId = manufact.gt;
-            const lteId = manufact.lte;
-            const idQuery = gtId ? { _id: { $gt: gtId, $lte: lteId } } : { _id: { $lte: lteId } };
+            // const gtId = manufact.gt;
+            // const lteId = manufact.lte;
+            // const idQuery = gtId ? { _id: { $gt: gtId, $lte: lteId } } : { _id: { $lte: lteId } };
             const batchSize = 10000;
             let processed = 0;
             let batchNum = 1;
@@ -1896,7 +1896,9 @@ exports.generateitemsoncode = async (req, res) => {
                 const currentBatchSize = Math.min(batchSize, remaining);
 
                 // Fetch a batch of codes with items: null
-                const codesBatch = await Code.find({ items: null, ...idQuery }, '_id')
+                const codesBatch = await Code.find({ items: null, 
+                    // ...idQuery 
+                }, '_id')
                     .sort({ index: -1 })
                     .limit(currentBatchSize)
                     .session(session);
