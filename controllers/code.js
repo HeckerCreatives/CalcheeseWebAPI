@@ -16,6 +16,8 @@ const Inventory = require("../models/Inventory");
 const Player = require("../models/Player");
 const { checkmaintenance } = require("../utils/maintenancetools");
 const { getmanufacturerbyname } = require("../utils/manufacturerutil");
+const { syncAllAnalytics } = require("./dashboard");
+const { syncAllAnalyticsUtility } = require("../utils/analytics");
 
 const CHARSET = 'ACDEFHJKLMNPRTUVXWY379';
 const CODE_LENGTH = 9;
@@ -663,7 +665,7 @@ async function handleCodeGeneration(data) {
 
 exports.getcodes = async (req, res) => {
 
-    const { page, limit, type, rarity, item, status, search, archive } = req.query;
+    const { page, limit, type, rarity, item, status, search, archive, lastid } = req.query;
     const pageOptions = {
         page: parseInt(page) || 0,
         limit: parseInt(limit) || 10,
@@ -688,7 +690,6 @@ exports.getcodes = async (req, res) => {
             filter.archived = { $in: [false, undefined] };
         }
 
-    console.log("Filter:", filter);
     if (search) {
         const searchRegex = new RegExp(search, 'i'); // Case-insensitive search
         filter.$or = [
@@ -697,6 +698,10 @@ exports.getcodes = async (req, res) => {
             { "robuxcode.robuxcode": searchRegex },
             { "ticket.ticketid": searchRegex }
         ];
+    }
+    
+    if (lastid && mongoose.isValidObjectId(lastid)) {
+        filter._id = { $lt: new mongoose.Types.ObjectId(lastid) };
     }
 
     let totalDocs = 0;
@@ -730,7 +735,7 @@ exports.getcodes = async (req, res) => {
             $limit: pageOptions.limit,
         },
         {
-            $sort: { index: -1, _id: -1 }
+            $sort: { _id: -1 }
         }
     ])
         .then(data => data)
@@ -989,12 +994,14 @@ exports.getcodes = async (req, res) => {
         const totalPages = Math.ceil(totalDocs / pageOptions.limit);
 
 
+    const lastcodeid = codes.length > 0 ? codes[codes.length - 1]._id : null;
 
     return res.json({
         message: "success",
         data: finalData,
         totalPages,
         totalDocs,
+        lastcodeid
     });
 }
 
@@ -1833,7 +1840,7 @@ exports.resetcode = async (req, res) => {
 }
 
 
-exports.generateitemsoncode = async (req, res) => {
+exports.generateitemsoncode = async (req, res, next) => {
 
     const { manufacturer, type, rarity, itemid, codesamount, socketid } = req.body;
 
@@ -1871,9 +1878,11 @@ exports.generateitemsoncode = async (req, res) => {
 
         try {
             transactionActive = true;
-            const items = await Item.findById(itemid).session(session);
-
-            if (!items) {
+            let itemDocs = Array.isArray(itemid)
+            ? await Item.find({ _id: { $in: itemid } }).session(session)
+            : [await Item.findById(itemid).session(session)];
+            
+            if (!itemDocs || itemDocs.length === 0) {
                 await session.abortTransaction();
                 session.endSession();
                 io.to(socketid).emit('generate-items-progress', {
@@ -1884,6 +1893,7 @@ exports.generateitemsoncode = async (req, res) => {
                 });
                 return;
             }
+            const itemIds = itemDocs.map(item => item._id);
 
             // const gtId = manufact.gt;
             // const lteId = manufact.lte;
@@ -1897,33 +1907,31 @@ exports.generateitemsoncode = async (req, res) => {
                 const currentBatchSize = Math.min(batchSize, remaining);
 
                 // Fetch a batch of codes with items: null
-                const codesBatch = await Code.find({ items: null, 
+                const codesBatch = await Code.find({ items: { $size: 0 }, 
                     // ...idQuery 
                 }, '_id')
                     .sort({ index: -1 })
                     .limit(currentBatchSize)
                     .session(session);
 
-                if (codesBatch.length === 0) {
-                    await session.abortTransaction();
-                    session.endSession();
-                    io.to(socketid).emit('generate-items-progress', {
-                        percentage: 100,
-                        status: 'failed',
-                        message: "No available codes to generate items for!",
-                        success: false
-                    });
-                    return;
-                }
 
-                const bulkOps = codesBatch.map(code => ({
-                    updateOne: {
-                        filter: { _id: code._id },
-                        update: { $set: { items: [items._id], status: "to-claim", type: type, rarity: rarity } }
+                    if (codesBatch.length === 0) {
+                    break;
                     }
-                }));
+                await Code.updateMany(
+                { _id: { $in: codesBatch.map(code => code._id) } },
+                {
+                    $set: {
+                    items: itemIds,
+                    status: "to-claim",
+                    type: type,
+                    rarity: rarity
+                    }
+                },
+                { session }
+                );
 
-                await Code.bulkWrite(bulkOps, { session });
+
                 processed += codesBatch.length;
 
                 const percentage = Math.round((processed / codesamount) * 100);
@@ -1936,22 +1944,19 @@ exports.generateitemsoncode = async (req, res) => {
                 });
                 batchNum++;
             }
-
-            await session.commitTransaction();
-            transactionActive = false;
-            session.endSession();
-
+            await syncAllAnalyticsUtility();
             io.to(socketid).emit('generate-items-progress', {
                 percentage: 100,
                 status: 'Complete',
                 processed,
                 type,
                 rarity,
-                item: items.name,
-                manufacturer: manufact.name,
+                manufacturer: manufacturer,
                 success: true
             });
-
+            await session.commitTransaction();
+            transactionActive = false;
+            session.endSession();
         } catch (error) {
             if (transactionActive) {
                 await session.abortTransaction();
