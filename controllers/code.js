@@ -701,7 +701,7 @@ exports.getcodes = async (req, res) => {
     }
     
     if (lastid && mongoose.isValidObjectId(lastid)) {
-        filter._id = { $lt: new mongoose.Types.ObjectId(lastid) };
+        filter._id = { $gt: new mongoose.Types.ObjectId(lastid) };
     }
 
     let totalDocs = 0;
@@ -729,13 +729,10 @@ exports.getcodes = async (req, res) => {
             $unwind: { path: "$ticket", preserveNullAndEmptyArrays: true },
         },
         {
-            $skip: pageOptions.page * pageOptions.limit,
-        },
-        {
             $limit: pageOptions.limit,
         },
         {
-            $sort: { _id: -1 }
+            $sort: { _id: 1 }
         }
     ])
         .then(data => data)
