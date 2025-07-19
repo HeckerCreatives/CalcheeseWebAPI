@@ -700,13 +700,7 @@ exports.getcodes = async (req, res) => {
         ];
     }
 
-    let lastidindex = page * pageOptions.limit;
-    console.log("Last ID Index:", lastidindex);
     
-    if (lastidindex) {
-        filter.index = { $gt: lastidindex };
-    }
-
     const manufact = getmanufacturerbyname(manufacturer);
     
     if (manufact !== null) {
@@ -714,7 +708,12 @@ exports.getcodes = async (req, res) => {
         let index = manufact.lte ? manufact.lte : 0;
         filter._id = { $lte: index, ...(gtindex && { $gt: gtindex }) };
     }
-
+    
+    let lastidindex = page * pageOptions.limit;
+    
+    if (lastidindex) {
+        filter.index = { $gt: lastidindex };
+    }
     let totalDocs = 0;
     const codes = await Code.aggregate([
         {
@@ -811,199 +810,67 @@ exports.getcodes = async (req, res) => {
             return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
         });
 
-    if (filter.archived === true) {
-        totalDocs = AnalyticsData.totalarchived || 0;
-        console.log('Using archived total:', totalDocs);
-    } else if (filter.type) {
-                switch(filter.type) {
-                    case 'ingame':
-                        console.log('Checking ingame codes...');
-                        if (filter.rarity) {
-                            console.log('Checking ingame rarity:', filter.rarity);
-                            switch(filter.rarity) {
-                                case 'common': 
-                                    console.log('Found ingame common:', AnalyticsData.totalingamecommon);
-                                    totalDocs = AnalyticsData.totalingamecommon || 0; 
-                                    break;
-                                case 'uncommon': 
-                                    console.log('Found ingame uncommon:', AnalyticsData.totalingameuncommon);
-                                    totalDocs = AnalyticsData.totalingameuncommon || 0; 
-                                    break;
-                                case 'rare': 
-                                    console.log('Found ingame rare:', AnalyticsData.totalingamerare);
-                                    totalDocs = AnalyticsData.totalingamerare || 0; 
-                                    break;
-                                case 'epic': 
-                                    console.log('Found ingame epic:', AnalyticsData.totalingameepic);
-                                    totalDocs = AnalyticsData.totalingameepic || 0; 
-                                    break;
-                                case 'legendary': 
-                                    console.log('Found ingame legendary:', AnalyticsData.totalingamelegendary);
-                                    totalDocs = AnalyticsData.totalingamelegendary || 0; 
-                                    break;
-                            }
-                        } else {
-                            console.log('Calculating total ingame codes...');
-                            totalDocs = (AnalyticsData.totalingamecommon + 
-                                       AnalyticsData.totalingameuncommon + 
-                                       AnalyticsData.totalingamerare + 
-                                       AnalyticsData.totalingameepic + 
-                                       AnalyticsData.totalingamelegendary) || 0;
-                            console.log('Total ingame codes:', totalDocs);
-                        }
-                        break;
-                    case 'exclusive':
-                        console.log('Checking exclusive codes...');
-                        if (filter.rarity) {
-                            console.log('Checking exclusive rarity:', filter.rarity);
-                            switch(filter.rarity) {
-                                case 'common': 
-                                    console.log('Found exclusive common:', AnalyticsData.totalexclusivecommon);
-                                    totalDocs = AnalyticsData.totalexclusivecommon || 0; 
-                                    break;
-                                case 'uncommon': 
-                                    console.log('Found exclusive uncommon:', AnalyticsData.totalexclusiveuncommon);
-                                    totalDocs = AnalyticsData.totalexclusiveuncommon || 0; 
-                                    break;
-                                case 'rare': 
-                                    console.log('Found exclusive rare:', AnalyticsData.totalexclusiverare);
-                                    totalDocs = AnalyticsData.totalexclusiverare || 0; 
-                                    break;
-                                case 'epic': 
-                                    console.log('Found exclusive epic:', AnalyticsData.totalexclusiveepic);
-                                    totalDocs = AnalyticsData.totalexclusiveepic || 0; 
-                                    break;
-                                case 'legendary': 
-                                    console.log('Found exclusive legendary:', AnalyticsData.totalexclusivelegendary);
-                                    totalDocs = AnalyticsData.totalexclusivelegendary || 0; 
-                                    break;
-                            }
-                        } else {
-                            console.log('Calculating total exclusive codes...');
-                            totalDocs = (AnalyticsData.totalexclusivecommon + 
-                                       AnalyticsData.totalexclusiveuncommon + 
-                                       AnalyticsData.totalexclusiverare + 
-                                       AnalyticsData.totalexclusiveepic + 
-                                       AnalyticsData.totalexclusivelegendary) || 0;
-                            console.log('Total exclusive codes:', totalDocs);
-                        }
-                        break;
-                    case 'chest':
-                        console.log('Checking chest codes...');
-                        if (filter.rarity) {
-                            console.log('Checking chest rarity:', filter.rarity);
-                            switch(filter.rarity) {
-                                case 'common': 
-                                    console.log('Found chest common:', AnalyticsData.totalchestcommon);
-                                    totalDocs = AnalyticsData.totalchestcommon || 0; 
-                                    break;
-                                case 'uncommon': 
-                                    console.log('Found chest uncommon:', AnalyticsData.totalchestuncommon);
-                                    totalDocs = AnalyticsData.totalchestuncommon || 0; 
-                                    break;
-                                case 'rare': 
-                                    console.log('Found chest rare:', AnalyticsData.totalchestrare);
-                                    totalDocs = AnalyticsData.totalchestrare || 0; 
-                                    break;
-                                case 'epic': 
-                                    console.log('Found chest epic:', AnalyticsData.totalchestepic);
-                                    totalDocs = AnalyticsData.totalchestepic || 0; 
-                                    break;
-                                case 'legendary': 
-                                    console.log('Found chest legendary:', AnalyticsData.totalchestlegendary);
-                                    totalDocs = AnalyticsData.totalchestlegendary || 0; 
-                                    break;
-                            }
-                        } else {
-                            console.log('Calculating total chest codes...');
-                            totalDocs = (AnalyticsData.totalchestcommon + 
-                                       AnalyticsData.totalchestuncommon + 
-                                       AnalyticsData.totalchestrare + 
-                                       AnalyticsData.totalchestepic + 
-                                       AnalyticsData.totalchestlegendary) || 0;
-                            console.log('Total chest codes:', totalDocs);
-                        }
-                        break;
-                    case 'robux':
-                        console.log('Checking robux codes...');
-                        if (filter.rarity) {
-                            console.log('Checking robux rarity:', filter.rarity);
-                            switch(filter.rarity) {
-                                case 'common': 
-                                    console.log('Found robux common:', AnalyticsData.totalrobuxcommon);
-                                    totalDocs = AnalyticsData.totalrobuxcommon || 0; 
-                                    break;
-                                case 'uncommon': 
-                                    console.log('Found robux uncommon:', AnalyticsData.totalrobuxuncommon);
-                                    totalDocs = AnalyticsData.totalrobuxuncommon || 0; 
-                                    break;
-                                case 'rare': 
-                                    console.log('Found robux rare:', AnalyticsData.totalrobuxrare);
-                                    totalDocs = AnalyticsData.totalrobuxrare || 0; 
-                                    break;
-                                case 'epic': 
-                                    console.log('Found robux epic:', AnalyticsData.totalrobuxepic);
-                                    totalDocs = AnalyticsData.totalrobuxepic || 0; 
-                                    break;
-                                case 'legendary': 
-                                    console.log('Found robux legendary:', AnalyticsData.totalrobuxlegendary);
-                                    totalDocs = AnalyticsData.totalrobuxlegendary || 0; 
-                                    break;
-                            }
-                        } else {
-                            console.log('Calculating total robux codes...');
-                            totalDocs = (AnalyticsData.totalrobuxcommon + 
-                                       AnalyticsData.totalrobuxuncommon + 
-                                       AnalyticsData.totalrobuxrare + 
-                                       AnalyticsData.totalrobuxepic + 
-                                       AnalyticsData.totalrobuxlegendary) || 0;
-                            console.log('Total robux codes:', totalDocs);
-                        }
-                        break;
-                    case 'ticket':
-                        console.log('Checking ticket codes...');
-                        if (filter.rarity) {
-                            console.log('Checking ticket rarity:', filter.rarity);
-                            switch(filter.rarity) {
-                                case 'common': 
-                                    console.log('Found ticket common:', AnalyticsData.totalticketcommon);
-                                    totalDocs = AnalyticsData.totalticketcommon || 0; 
-                                    break;
-                                case 'uncommon': 
-                                    console.log('Found ticket uncommon:', AnalyticsData.totalticketuncommon);
-                                    totalDocs = AnalyticsData.totalticketuncommon || 0; 
-                                    break;
-                                case 'rare': 
-                                    console.log('Found ticket rare:', AnalyticsData.totalticketrare);
-                                    totalDocs = AnalyticsData.totalticketrare || 0; 
-                                    break;
-                                case 'epic': 
-                                    console.log('Found ticket epic:', AnalyticsData.totalticketepic);
-                                    totalDocs = AnalyticsData.totalticketepic || 0; 
-                                    break;
-                                case 'legendary': 
-                                    console.log('Found ticket legendary:', AnalyticsData.totalticketlegendary);
-                                    totalDocs = AnalyticsData.totalticketlegendary || 0; 
-                                    break;
-                            }
-                        } else {
-                            console.log('Calculating total ticket codes...');
-                            totalDocs = (AnalyticsData.totalticketcommon + 
-                                       AnalyticsData.totalticketuncommon + 
-                                       AnalyticsData.totalticketrare + 
-                                       AnalyticsData.totalticketepic + 
-                                       AnalyticsData.totalticketlegendary) || 0;
-                            console.log('Total ticket codes:', totalDocs);
-                        }
+
+        if (filter.archived === true) {
+            totalDocs = AnalyticsData.totalarchived || 0;
+        } else if (filter._id) {
+            const mfg = manufact.type || '';
+
+            if (filter.type && filter.rarity) {
+                // Example: totalhbyxrobuxrare
+                const key = `total${mfg}${filter.type}${filter.rarity}`;
+                totalDocs = AnalyticsData[key] || 0;
+
+            } else if (filter.type) {
+                // Sum all rarities for the given type
+                const rarities = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
+                totalDocs = rarities.reduce((sum, rarity) => {
+                    const key = `total${mfg}${filter.type}${rarity}`;
+                    return sum + (AnalyticsData[key] || 0);
+                }, 0);
+
+            } else {
+                // Total from this manufacturer across all types (no type filter)
+                const types = ['ingame', 'exclusive', 'chest', 'robux', 'ticket'];
+                totalDocs = types.reduce((sum, type) => {
+                    const key = `total${mfg}${type}`;
+                    return sum + (AnalyticsData[key] || 0);
+                }, 0);
+            }
+
+        } else if (filter.type) {
+            switch (filter.type) {
+                case 'ingame':
+                case 'exclusive':
+                case 'chest':
+                case 'robux':
+                case 'ticket': {
+                    const prefix = `total${filter.type}`;
+                    const rarities = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
+
+                    if (filter.rarity) {
+                        const key = `${prefix}${filter.rarity}`;
+                        totalDocs = AnalyticsData[key] || 0;
+                    } else {
+                        totalDocs = rarities.reduce((sum, rarity) => {
+                            const key = `${prefix}${rarity}`;
+                            return sum + (AnalyticsData[key] || 0);
+                        }, 0);
                     }
-    } else {
-        totalDocs = (AnalyticsData.totalclaimed + AnalyticsData.totalapproved + AnalyticsData.totaltoclaim + AnalyticsData.totalexpired) || 0;
-        console.log('Calculating total codes:', totalDocs);
-    }
+                    break;
+                }
+            }
+        } else {
+            totalDocs = AnalyticsData.totaltoclaim + AnalyticsData.totaltogenerate + AnalyticsData.totalclaimed + AnalyticsData.totalexpired + AnalyticsData.totalapproved || 0;
+        }
+
+
         const totalPages = Math.ceil(totalDocs / pageOptions.limit);
 
 
-    const lastcodeid = codes.length > 0 ? codes[codes.length - 1].index : null;
+        console.log(codes[codes.length - 1]?.index);
+
+    const lastcodeid = codes[codes.length - 1]?.index || 0;
 
     return res.json({
         message: "success",
@@ -1638,7 +1505,6 @@ exports.editmultiplecodes = async (req, res) => {
         });
     }
 
-    console.log(updatedata);
     if (Object.keys(updatedata).length === 0) {
         return res.status(400).json({ 
             message: "bad-request", 
@@ -1656,7 +1522,6 @@ exports.editmultiplecodes = async (req, res) => {
             await updateAnalyticsOnArchive(code, -1); // decrement analytics
         }
 
-        console.log(`Archiving ${originalCodes.length} codes...`);
     } else if (archive === false) {
         // Unarchive: set archived=false, restore to analytics
         for (const code of originalCodes) {
@@ -1686,7 +1551,6 @@ async function updateAnalyticsOnArchive(code, direction = -1) {
     const analyticsUpdate = { $inc: {} };
     
     const analyticsData = await Analytics.findOne({});
-    console.log(`Current analytics data:`, analyticsData);
     // Update status counters
     if (code.status === "claimed") analyticsUpdate.$inc.totalclaimed = direction;
     if (code.status === "to-claim") analyticsUpdate.$inc.totaltoclaim = direction;
@@ -1704,14 +1568,12 @@ async function updateAnalyticsOnArchive(code, direction = -1) {
             analyticsUpdate.$inc[`totalunclaimed${code.type}`] = direction;
         }
 
-        console.log(`${analyticsUpdate.$inc[typeRarityField]} for ${typeRarityField}`);
     }
 
 
     // Update archive counter with opposite direction
     analyticsUpdate.$inc.totalarchived = -direction;
 
-    console.log(`Updating analytics for code ${code._id}:`, analyticsUpdate);
     const result = await Analytics.findOneAndUpdate({}, analyticsUpdate, { new: true });
     console.log(`Updated analytics for code ${code._id}:`, result);
 }
@@ -1777,7 +1639,7 @@ async function updateAnalyticsOnEdit(original, updated) {
 
     // Only update if there are changes
     if (Object.keys(analyticsUpdate.$inc).length > 0) {
-        console.log('Updating analytics:', analyticsUpdate);
+        ('Updating analytics:', analyticsUpdate);
         await Analytics.findOneAndUpdate({}, analyticsUpdate, { new: true });
     }
 }

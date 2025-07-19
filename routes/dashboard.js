@@ -1,4 +1,4 @@
-const { getcardanalytics, redeemCodeAnalytics, redeemCodeStatusAnalytics, getregionalAnalytics, gettypeclaimbarchart, syncTypeClaimAnalytics, getpiechartanalytics, syncAllAnalytics } = require("../controllers/dashboard")
+const { getcardanalytics, redeemCodeAnalytics, redeemCodeStatusAnalytics, getregionalAnalytics, gettypeclaimbarchart, syncTypeClaimAnalytics, getpiechartanalytics, syncAllAnalytics, redeemCodeStatusTypesAnalytics } = require("../controllers/dashboard")
 const { protectsuperadmin } = require("../middleware/middleware")
 
 const router = require("express").Router()
@@ -7,6 +7,7 @@ router
  .get("/getcardanalytics", protectsuperadmin, getcardanalytics)
  .get("/getredeemcodeanalytics", protectsuperadmin, redeemCodeAnalytics)
  .get("/getredeemcodeanalyticsstatus", protectsuperadmin, redeemCodeStatusAnalytics)
+ .get("/getredeemcodeanalyticsstatustypes", protectsuperadmin, redeemCodeStatusTypesAnalytics)
  .get("/getregionalanlytics", protectsuperadmin, getregionalAnalytics)
  .get("/gettypeclaimbarchart", protectsuperadmin, gettypeclaimbarchart)
  .get("/getpiechartanalytics", protectsuperadmin, getpiechartanalytics)

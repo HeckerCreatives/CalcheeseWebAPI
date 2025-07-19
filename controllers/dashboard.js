@@ -135,7 +135,6 @@ exports.redeemCodeAnalytics = async (req, res) => {
         { $sort: sortCondition }
     ]);
 
-    console.log(data);
     let finalData = {};
 
     // Filtering data
@@ -375,7 +374,6 @@ exports.gettypeclaimbarchart = async (req, res) => {
             return res.status(404).json({ message: "not-found", data: "Analytics not found." });
         }
 
-        console.log("Analytics data:", analytics);
         // Build result from analytics fields
         const types = ["robux", "ticket", "exclusive", "chest", "ingame"];
         const result = {};
@@ -386,7 +384,6 @@ exports.gettypeclaimbarchart = async (req, res) => {
             };
         });
 
-        console.log("Type-claim barchart data:", result);
         return res.json({ message: "success", data: result });
 
         // can i add something here that updates the analytics data?
@@ -608,4 +605,194 @@ exports.syncAllAnalytics = async (req, res) => {
             data: "Failed to sync all analytics data." 
         });
     }
+};
+
+
+
+exports.redeemCodeStatusTypesAnalytics = async (req, res) => {
+    const { charttype } = req.query;
+    const filter = charttype;
+    let matchCondition = {};
+    let projectCondition = {};
+    let groupCondition = {};
+    let sortCondition = {};
+
+    if (filter === 'daily') {
+        const currentDate = new Date();
+        const startOfDay = new Date(currentDate.setHours(0, 0, 0, 0));
+        const endOfDay = new Date(currentDate.setHours(24, 0, 0, 0));
+        matchCondition.createdAt = { $gte: startOfDay, $lt: endOfDay };
+
+        projectCondition = {
+            hour_created: { $hour: "$createdAt" },
+            status: 1,
+            code: 1,
+            type: "$codeDetails.type"
+        };
+        groupCondition = {
+            _id: {
+                hour: "$hour_created",
+                status: "$status",
+                type: "$type"
+            },
+            value: { $sum: 1 }
+        };
+        sortCondition = { "_id.hour": 1 };
+
+    } else if (filter === 'weekly') {
+        const now = new Date();
+        const start = new Date(now);
+        start.setDate(start.getDate() - start.getDay());
+        start.setHours(0, 0, 0, 0);
+
+        const end = new Date(start);
+        end.setDate(end.getDate() + 7);
+        matchCondition.createdAt = { $gte: start, $lt: end };
+
+        projectCondition = {
+            day_of_week: { $dayOfWeek: "$createdAt" },
+            status: 1,
+            code: 1,
+            type: "$codeDetails.type"
+        };
+        groupCondition = {
+            _id: {
+                day: "$day_of_week",
+                status: "$status",
+                type: "$type"
+            },
+            value: { $sum: 1 }
+        };
+        sortCondition = { "_id.day": 1 };
+
+    } else if (filter === 'monthly') {
+        const currentYear = new Date().getFullYear();
+        const startOfCurrentYear = startOfYear(new Date(currentYear, 0, 1));
+        const endOfCurrentYear = endOfYear(new Date(currentYear, 0, 1));
+        matchCondition.createdAt = { $gte: startOfCurrentYear, $lt: endOfCurrentYear };
+
+        projectCondition = {
+            month: { $month: "$createdAt" },
+            status: 1,
+            code: 1,
+            type: "$codeDetails.type"
+        };
+        groupCondition = {
+            _id: {
+                month: "$month",
+                status: "$status",
+                type: "$type"
+            },
+            value: { $sum: 1 }
+        };
+        sortCondition = { "_id.month": 1 };
+
+    } else if (filter === 'yearly') {
+        projectCondition = {
+            year_created: { $year: "$createdAt" },
+            status: 1,
+            code: 1,
+            type: "$codeDetails.type"
+        };
+        groupCondition = {
+            _id: {
+                year: "$year_created",
+                status: "$status",
+                type: "$type"
+            },
+            value: { $sum: 1 }
+        };
+        sortCondition = { "_id.year": 1 };
+
+    } else {
+        return res.status(400).json({ message: "failed", data: "Invalid filter. Use 'daily', 'weekly', 'monthly', or 'yearly'." });
+    }
+
+    const data = await RedeemedCodeAnalytics.aggregate([
+        { $match: matchCondition },
+        {
+            $lookup: {
+                from: "codes", // collection name in MongoDB
+                localField: "code",
+                foreignField: "_id",
+                as: "codeDetails"
+            }
+        },
+        { $unwind: "$codeDetails" },
+        { $project: projectCondition },
+        { $group: groupCondition },
+        { $sort: sortCondition }
+    ]);
+
+    // Organize output by type and fill missing timeKeys with 0
+    const finalData = {};
+
+    // Determine the timeKeys to iterate over based on filter
+    let timeKeys = [];
+    if (filter === 'daily') {
+        timeKeys = daily;
+    } else if (filter === 'weekly') {
+        timeKeys = weekly;
+    } else if (filter === 'monthly') {
+        timeKeys = monthly;
+    } else if (filter === 'yearly') {
+        const releasedYear = 2024;
+        const currentYear = new Date().getFullYear();
+        for (let year = releasedYear; year <= currentYear; year++) {
+            timeKeys.push(year);
+        }
+    }
+
+    // Collect all types from data
+    const allTypes = Array.from(new Set(data.map(entry => entry._id.type)));
+    // If no types found, fallback to a default type list if needed
+
+    // Initialize finalData for all types and statuses
+    allTypes.forEach(type => {
+        finalData[type] = { claimed: {}, pending: {}, rejected: {} };
+        timeKeys.forEach(timeKey => {
+            finalData[type].claimed[timeKey] = 0;
+            finalData[type].pending[timeKey] = 0;
+            finalData[type].rejected[timeKey] = 0;
+        });
+    });
+
+    // Fill in actual data
+    data.forEach(entry => {
+        const { status, type, hour, day, month, year } = entry._id;
+        const timeKey = hour || day || month || year;
+        if (!finalData[type]) {
+            finalData[type] = { claimed: {}, pending: {}, rejected: {} };
+            timeKeys.forEach(tk => {
+                finalData[type].claimed[tk] = 0;
+                finalData[type].pending[tk] = 0;
+                finalData[type].rejected[tk] = 0;
+            });
+        }
+        // If status is undefined, treat as 'claimed' (default)
+        if (status === undefined) {
+            finalData[type].claimed[timeKey] = entry.value;
+        } else {
+            if (status === "claimed") finalData[type].claimed[timeKey] = entry.value;
+            if (status === "pending") finalData[type].pending[timeKey] = entry.value;
+            if (status === "rejected") finalData[type].rejected[timeKey] = entry.value;
+        }
+    });
+
+    // If no data, return the same structure as if there were types, but all values are zero
+    if (data.length === 0) {
+        // Use the known types for this chart (robux, ticket, exclusive, chest, ingame)
+        const knownTypes = ["robux", "ticket", "exclusive", "chest", "ingame"];
+        knownTypes.forEach(type => {
+            finalData[type] = { claimed: {}, pending: {}, rejected: {} };
+            timeKeys.forEach(timeKey => {
+                finalData[type].claimed[timeKey] = 0;
+                finalData[type].pending[timeKey] = 0;
+                finalData[type].rejected[timeKey] = 0;
+            });
+        });
+    }
+
+    console.log(data);
+    return res.json({ message: "success", data: finalData });
 };
