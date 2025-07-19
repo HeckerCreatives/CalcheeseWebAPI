@@ -254,7 +254,7 @@ exports.redeemCodeStatusAnalytics = async (req, res) => {
         return res.status(400).json({ message: "failed", data: "Invalid filter. Use 'daily', 'weekly', 'monthly', or 'yearly'." });
     }
 
-    const data = await RedeemCode.aggregate([
+    const data = await RedeemedCodeAnalytics.aggregate([
         { $match: matchCondition },
         { $project: projectCondition },
         { $group: groupCondition },
