@@ -724,74 +724,30 @@ exports.redeemCodeStatusTypesAnalytics = async (req, res) => {
         { $sort: sortCondition }
     ]);
 
-    // Organize output by type and fill missing timeKeys with 0
+    // Organize output by type and status, just the count for the period (no timeKey)
     const finalData = {};
 
-    // Determine the timeKeys to iterate over based on filter
-    let timeKeys = [];
-    if (filter === 'daily') {
-        timeKeys = daily;
-    } else if (filter === 'weekly') {
-        timeKeys = weekly;
-    } else if (filter === 'monthly') {
-        timeKeys = monthly;
-    } else if (filter === 'yearly') {
-        const releasedYear = 2024;
-        const currentYear = new Date().getFullYear();
-        for (let year = releasedYear; year <= currentYear; year++) {
-            timeKeys.push(year);
-        }
-    }
 
-    // Collect all types from data
-    const allTypes = Array.from(new Set(data.map(entry => entry._id.type)));
-    // If no types found, fallback to a default type list if needed
-
-    // Initialize finalData for all types and statuses
-    allTypes.forEach(type => {
-        finalData[type] = { claimed: {}, pending: {}, rejected: {} };
-        timeKeys.forEach(timeKey => {
-            finalData[type].claimed[timeKey] = 0;
-            finalData[type].pending[timeKey] = 0;
-            finalData[type].rejected[timeKey] = 0;
-        });
+    // Always show all known types, even if not present in data
+    const knownTypes = ["robux", "ticket", "exclusive", "chest", "ingame"];
+    knownTypes.forEach(type => {
+        finalData[type] = { claimed: 0, pending: 0, rejected: 0 };
     });
 
     // Fill in actual data
     data.forEach(entry => {
-        const { status, type, hour, day, month, year } = entry._id;
-        const timeKey = hour || day || month || year;
+        const { status, type } = entry._id;
         if (!finalData[type]) {
-            finalData[type] = { claimed: {}, pending: {}, rejected: {} };
-            timeKeys.forEach(tk => {
-                finalData[type].claimed[tk] = 0;
-                finalData[type].pending[tk] = 0;
-                finalData[type].rejected[tk] = 0;
-            });
+            finalData[type] = { claimed: 0, pending: 0, rejected: 0 };
         }
-        // If status is undefined, treat as 'claimed' (default)
         if (status === undefined) {
-            finalData[type].claimed[timeKey] = entry.value;
+            finalData[type].claimed += entry.value;
         } else {
-            if (status === "claimed") finalData[type].claimed[timeKey] = entry.value;
-            if (status === "pending") finalData[type].pending[timeKey] = entry.value;
-            if (status === "rejected") finalData[type].rejected[timeKey] = entry.value;
+            if (status === "claimed") finalData[type].claimed += entry.value;
+            if (status === "pending") finalData[type].pending += entry.value;
+            if (status === "rejected") finalData[type].rejected += entry.value;
         }
     });
-
-    // If no data, return the same structure as if there were types, but all values are zero
-    if (data.length === 0) {
-        // Use the known types for this chart (robux, ticket, exclusive, chest, ingame)
-        const knownTypes = ["robux", "ticket", "exclusive", "chest", "ingame"];
-        knownTypes.forEach(type => {
-            finalData[type] = { claimed: {}, pending: {}, rejected: {} };
-            timeKeys.forEach(timeKey => {
-                finalData[type].claimed[timeKey] = 0;
-                finalData[type].pending[timeKey] = 0;
-                finalData[type].rejected[timeKey] = 0;
-            });
-        });
-    }
 
     console.log(data);
     return res.json({ message: "success", data: finalData });
