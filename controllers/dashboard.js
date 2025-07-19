@@ -731,21 +731,23 @@ exports.redeemCodeStatusTypesAnalytics = async (req, res) => {
     // Always show all known types, even if not present in data
     const knownTypes = ["robux", "ticket", "exclusive", "chest", "ingame"];
     knownTypes.forEach(type => {
-        finalData[type] = { claimed: 0, pending: 0, rejected: 0 };
+        finalData[type] = { claimed: 0, pending: 0, rejected: 0, total: 0 };
     });
 
     // Fill in actual data
     data.forEach(entry => {
         const { status, type } = entry._id;
         if (!finalData[type]) {
-            finalData[type] = { claimed: 0, pending: 0, rejected: 0 };
+            finalData[type] = { claimed: 0, pending: 0, rejected: 0, total: 0};
         }
         if (status === undefined) {
             finalData[type].claimed += entry.value;
+            finalData[type].total += entry.value; // Add total for undefined status
         } else {
             if (status === "claimed") finalData[type].claimed += entry.value;
             if (status === "pending") finalData[type].pending += entry.value;
             if (status === "rejected") finalData[type].rejected += entry.value;
+            finalData[type].total += entry.value;
         }
     });
 
