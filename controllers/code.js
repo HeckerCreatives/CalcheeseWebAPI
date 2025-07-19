@@ -15,7 +15,7 @@ const crypto = require('crypto');
 const Inventory = require("../models/Inventory");
 const Player = require("../models/Player");
 const { checkmaintenance } = require("../utils/maintenancetools");
-const { getmanufacturerbyname } = require("../utils/manufacturerutil");
+const { getmanufacturerbyname, getmanufacturerbyindex } = require("../utils/manufacturerutil");
 const { syncAllAnalytics } = require("./dashboard");
 const { syncAllAnalyticsUtility } = require("../utils/analytics");
 
@@ -699,18 +699,20 @@ exports.getcodes = async (req, res) => {
             { "ticket.ticketid": searchRegex }
         ];
     }
+
+    let lastidindex = page * pageOptions.limit;
+    console.log("Last ID Index:", lastidindex);
     
-    if (lastid && mongoose.isValidObjectId(lastid)) {
-        filter._id = { $gt: new mongoose.Types.ObjectId(lastid) };
+    if (lastidindex) {
+        filter.index = { $gt: lastidindex };
     }
 
     const manufact = getmanufacturerbyname(manufacturer);
     
     if (manufact !== null) {
-
-        let gtindex = manufact.gtindex ? manufact.gtindex : 0;
-        let index = manufact.index ? manufact.index : 0;
-        filter.index = { $lte: index, $gt: gtindex };
+        let gtindex = manufact.gt ? manufact.gt : null;
+        let index = manufact.lte ? manufact.lte : 0;
+        filter._id = { $lte: index, ...(gtindex && { $gt: gtindex }) };
     }
 
     let totalDocs = 0;
@@ -758,6 +760,7 @@ exports.getcodes = async (req, res) => {
             code: code.code,
             status: code.status,
             index: code.index,
+            manufacturer: getmanufacturerbyindex(code.index).name,
             items: code.items.map(item => ({
                 id: item._id,
                 itemid: item.itemid,
@@ -1000,7 +1003,7 @@ exports.getcodes = async (req, res) => {
         const totalPages = Math.ceil(totalDocs / pageOptions.limit);
 
 
-    const lastcodeid = codes.length > 0 ? codes[codes.length - 1]._id : null;
+    const lastcodeid = codes.length > 0 ? codes[codes.length - 1].index : null;
 
     return res.json({
         message: "success",
