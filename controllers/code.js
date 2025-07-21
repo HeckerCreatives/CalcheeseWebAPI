@@ -876,72 +876,79 @@ exports.getcodes = async (req, res) => {
 }
 
 exports.getcodescount = async (req, res) => {
-
-        const { page, limit, type, rarity, item, status, search, archive, lastid, manufacturer } = req.query;
+    const { socketid, page, limit, type, rarity, item, status, search, archive, lastid, manufacturer } = req.query;
     const pageOptions = {
         page: parseInt(page) || 0,
         limit: parseInt(limit) || 10,
     };
 
-    const filter = {};
-    if (type) filter.type = type;
-    if (item) filter.items = { $in: [new mongoose.Types.ObjectId(item)] };
-    if (status && ['to-generate', "to-claim", 'claimed', "approved", "expired", null].includes(status.toLowerCase())) {
-        if (status.toLowerCase() === "expired") {
-            filter.expiration = { $lte: new Date() };
-        } else {
-            filter.status = status.toLowerCase();
+    // Immediately respond to avoid timeout
+    res.json({ message: "success", status: "count-started" });
+
+    // Start background processing
+    (async () => {
+        const filter = {};
+        if (type) filter.type = type;
+        if (item) filter.items = { $in: [new mongoose.Types.ObjectId(item)] };
+        if (status && ['to-generate', "to-claim", 'claimed', "approved", "expired", null].includes(status.toLowerCase())) {
+            if (status.toLowerCase() === "expired") {
+                filter.expiration = { $lte: new Date() };
+            } else {
+                filter.status = status.toLowerCase();
+            }
         }
-    }
-    if (rarity && ["common", "uncommon", "rare", "epic", "legendary"].includes(rarity)) {
-        filter.rarity = rarity;
-    }
+        if (rarity && ["common", "uncommon", "rare", "epic", "legendary"].includes(rarity)) {
+            filter.rarity = rarity;
+        }
         if (archive === 'true' || archive === true) {
             filter.archived = true;
         } else {
             filter.archived = { $in: [false, undefined] };
         }
 
-    if (search) {
-        const searchRegex = new RegExp(search, 'i'); // Case-insensitive search
-        filter.$or = [
-            { code: searchRegex },
-        ];
-    }
+        if (search) {
+            const searchRegex = new RegExp(search, 'i');
+            filter.$or = [{ code: searchRegex }];
+        }
 
-    
-    const manufact = getmanufacturerbyname(manufacturer);
-    
-    if (manufact !== null) {
-        let gtindex = manufact.gt ? manufact.gt : null;
-        let index = manufact.lte ? manufact.lte : 0;
-        filter._id = { $lte: index, ...(gtindex && { $gt: gtindex }) };
-    }
-    
-    let lastidindex = page * pageOptions.limit;
-    
-    if (lastidindex) {
-        filter.index = { $gt: lastidindex };
-    }
+        const manufact = getmanufacturerbyname(manufacturer);
+        if (manufact !== null) {
+            let gtindex = manufact.gt ? manufact.gt : null;
+            let index = manufact.lte ? manufact.lte : 0;
+            filter._id = { $lte: index, ...(gtindex && { $gt: gtindex }) };
+        }
 
+        let lastidindex = page * pageOptions.limit;
+        if (lastidindex) {
+            filter.index = { $gt: lastidindex };
+        }
 
-    const totalCodes = await Code.countDocuments(filter)
-        .then(data => data)
-        .catch(err => {
+        try {
+            const totalCodes = await Code.countDocuments(filter);
+            const totalPages = Math.ceil(totalCodes / pageOptions.limit);
+
+            if (socketid) {
+                io.to(socketid).emit('generate-progress', {
+                    percentage: 100,
+                    status: 'Complete',
+                    success: true,
+                    totalpages: totalPages,
+                    totalcodes: totalCodes
+                });
+            }
+        } catch (err) {
             console.log(`There's a problem getting the codes count. Error ${err}`);
-            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
-        });
-
-    const totalPages = Math.ceil(totalCodes / pageOptions.limit);
-
-
-    return res.json({
-        message: "success",
-        data: totalPages,
-    });
-    
+            if (socketid) {
+                io.to(socketid).emit('generate-progress', {
+                    percentage: 100,
+                    status: 'Failed',
+                    success: false,
+                    error: "There's a problem with the server! Please contact customer support for more details."
+                });
+            }
+        }
+    })();
 }
-
 // check code
 
 // exports.checkcode = async (req, res) => {
