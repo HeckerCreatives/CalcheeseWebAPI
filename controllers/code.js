@@ -1901,6 +1901,8 @@ exports.generateitemsoncode = async (req, res, next) => {
                 await session.abortTransaction();
                 transactionActive = false;
             }
+
+            console.error(`Error generating items on codes: ${error.message}`);
             session.endSession();
             io.to(socketid).emit('generate-items-progress', {
                 percentage: 100,
