@@ -1834,9 +1834,9 @@ exports.generateitemsoncode = async (req, res, next) => {
             }
             const itemIds = itemDocs.map(item => item._id);
 
-            // const gtId = manufact.gt;
-            // const lteId = manufact.lte;
-            // const idQuery = gtId ? { _id: { $gt: gtId, $lte: lteId } } : { _id: { $lte: lteId } };
+            const gtId = manufact.gt;
+            const lteId = manufact.lte;
+            const idQuery = gtId ? { _id: { $gt: gtId, $lte: lteId } } : { _id: { $lte: lteId } };
             const batchSize = 10000;
             let processed = 0;
             let batchNum = 1;
@@ -1847,7 +1847,7 @@ exports.generateitemsoncode = async (req, res, next) => {
 
                 // Fetch a batch of codes with items: null
                 const codesBatch = await Code.find({ items: { $size: 0 }, 
-                    // ...idQuery 
+                    ...idQuery 
                 }, '_id')
                     .sort({ index: -1 })
                     .limit(currentBatchSize)
