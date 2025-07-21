@@ -1883,7 +1883,7 @@ exports.generateitemsoncode = async (req, res, next) => {
                 });
                 batchNum++;
             }
-            await syncAllAnalyticsUtility();
+            // await syncAllAnalyticsUtility();
             io.to(socketid).emit('generate-items-progress', {
                 percentage: 100,
                 status: 'Complete',
