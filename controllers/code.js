@@ -1811,19 +1811,15 @@ exports.generateitemsoncode = async (req, res, next) => {
 
     // Start background processing
     (async () => {
-        const session = await mongoose.startSession();
-        session.startTransaction();
-        let transactionActive = false;
+        const batchSize = 1000;
+        let processed = 0;
+        let batchNum = 1;
 
         try {
-            transactionActive = true;
             let itemDocs = Array.isArray(itemid)
-            ? await Item.find({ _id: { $in: itemid } }).session(session)
-            : [await Item.findById(itemid).session(session)];
-            
+                ? await Item.find({ _id: { $in: itemid } })
+                : [await Item.findById(itemid)];
             if (!itemDocs || itemDocs.length === 0) {
-                await session.abortTransaction();
-                session.endSession();
                 io.to(socketid).emit('generate-items-progress', {
                     percentage: 100,
                     status: 'failed',
@@ -1837,39 +1833,45 @@ exports.generateitemsoncode = async (req, res, next) => {
             const gtId = manufact.gt;
             const lteId = manufact.lte;
             const idQuery = gtId ? { _id: { $gt: gtId, $lte: lteId } } : { _id: { $lte: lteId } };
-            const batchSize = 10000;
-            let processed = 0;
-            let batchNum = 1;
 
             while (processed < codesamount) {
                 const remaining = codesamount - processed;
                 const currentBatchSize = Math.min(batchSize, remaining);
 
-                // Fetch a batch of codes with items: null
-                const codesBatch = await Code.find({ items: { $size: 0 }, 
-                    ...idQuery 
-                }, '_id')
-                    .sort({ index: -1 })
-                    .limit(currentBatchSize)
-                    .session(session);
+                console.log(`Processing batch ${batchNum} with size ${currentBatchSize}...`);
 
+                console.log(`Querying for codes with IDs ${idQuery._id.$gt || ''} to ${idQuery._id.$lte || ''}...`);
+                io.to(socketid).emit('generate-items-progress', {
+                    percentage: Math.round((processed / codesamount) * 100),
+                    status: `Processing batch ${batchNum} (${processed}/${codesamount})...`
+                });
 
-                    if (codesBatch.length === 0) {
+                const codesBatch = await Code.find({ 
+                    ...idQuery, 
+                    items: { $size: 0 } })
+                    .select('_id index')
+                    // .sort({ index: -1 })
+                    .limit(currentBatchSize);
+
+                if (codesBatch.length === 0) {
+
+                    console.log(`No more codes available for batch ${batchNum}.`);
                     break;
-                    }
-                await Code.updateMany(
-                { _id: { $in: codesBatch.map(code => code._id) } },
-                {
-                    $set: {
-                    items: itemIds,
-                    status: "to-claim",
-                    type: type,
-                    rarity: rarity
-                    }
-                },
-                { session }
-                );
+                }
 
+                console.log(`Found ${codesBatch.length} codes for batch ${batchNum}.`);
+
+                await Code.updateMany(
+                    { _id: { $in: codesBatch.map(code => code._id) } },
+                    {
+                        $set: {
+                            items: itemIds,
+                            status: "to-claim",
+                            type: type,
+                            rarity: rarity
+                        }
+                    }
+                );
 
                 processed += codesBatch.length;
 
@@ -1881,9 +1883,11 @@ exports.generateitemsoncode = async (req, res, next) => {
                     total: codesamount,
                     success: true
                 });
+
+                console.log(`Processed batch ${batchNum}: ${codesBatch.length} codes, total processed: ${processed}`);
                 batchNum++;
             }
-            // await syncAllAnalyticsUtility();
+
             io.to(socketid).emit('generate-items-progress', {
                 percentage: 100,
                 status: 'Complete',
@@ -1893,17 +1897,8 @@ exports.generateitemsoncode = async (req, res, next) => {
                 manufacturer: manufacturer,
                 success: true
             });
-            await session.commitTransaction();
-            transactionActive = false;
-            session.endSession();
         } catch (error) {
-            if (transactionActive) {
-                await session.abortTransaction();
-                transactionActive = false;
-            }
-
             console.error(`Error generating items on codes: ${error.message}`);
-            session.endSession();
             io.to(socketid).emit('generate-items-progress', {
                 percentage: 100,
                 status: 'failed',
