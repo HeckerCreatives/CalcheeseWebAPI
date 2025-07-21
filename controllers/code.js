@@ -1787,11 +1787,11 @@ exports.generateitemsoncode = async (req, res, next) => {
         return res.status(400).json({ message: "bad-request", data: "Please provide all required fields!" });
     }
 
-    // const manufact = await getmanufacturerbyname(manufacturer);
+    const manufact = await getmanufacturerbyname(manufacturer);
 
-    // if (!manufact) {
-    //     return res.status(400).json({ message: "bad-request", data: "Invalid manufacturer type!" });
-    // }
+    if (!manufact) {
+        return res.status(400).json({ message: "bad-request", data: "Invalid manufacturer type!" });
+    }
 
     if (!['robux', 'ticket', 'ingame', 'exclusive', 'chest'].includes(type.toLowerCase())) {
         return res.status(400).json({ message: "bad-request", data: "Invalid type! Must be one of: robux, ticket, ingame, exclusive and chest." });
