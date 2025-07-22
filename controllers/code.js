@@ -18,6 +18,7 @@ const { checkmaintenance } = require("../utils/maintenancetools");
 const { getmanufacturerbyname, getmanufacturerbyindex } = require("../utils/manufacturerutil");
 const { syncAllAnalytics } = require("./dashboard");
 const { syncAllAnalyticsUtility } = require("../utils/analytics");
+const CodeAnalytics = require("../models/CodeAnalytics");
 
 const CHARSET = 'ACDEFHJKLMNPRTUVXWY379';
 const CODE_LENGTH = 9;
@@ -170,6 +171,15 @@ async function handleCodeGeneration(data) {
     }
 }
 
+
+function buildAnalyticsKey({ manufacturer, type, rarity, status }) {
+    let key = '';
+    if (manufacturer) key += `M:${manufacturer}`;
+    if (type) key += (key ? '|' : '') + `TY:${type}`;
+    if (rarity) key += (key ? '|' : '') + `R:${rarity}`;
+    if (status) key += (key ? '|' : '') + `S:${status}`;
+    return key || 'T'; // 'T' for total if no filter
+}
 // async function handleCodeGeneration(data) {
 //     const { socketid, expiration, codeamount, items, type, length, rarity } = data;
 
@@ -800,68 +810,80 @@ exports.getcodes = async (req, res) => {
     });
 
         
-    const AnalyticsData = await Analytics.findOne({})
-        .then(data => data)
-        .catch(err => {
-            console.log(`There's a problem getting the analytics data. Error ${err}`);
-            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
-        });
+    // const AnalyticsData = await Analytics.findOne({})
+    //     .then(data => data)
+    //     .catch(err => {
+    //         console.log(`There's a problem getting the analytics data. Error ${err}`);
+    //         return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+    //     });
 
 
-        if (filter.archived === true) {
-            totalDocs = AnalyticsData.totalarchived || 0;
-        } else if (filter._id) {
-            const mfg = manufact.type || '';
+    //     if (filter.archived === true) {
+    //         totalDocs = AnalyticsData.totalarchived || 0;
+    //     } else if (filter._id) {
+    //         const mfg = manufact.type || '';
 
-            if (filter.type && filter.rarity) {
-                // Example: totalhbyxrobuxrare
-                const key = `total${mfg}${filter.type}${filter.rarity}`;
-                totalDocs = AnalyticsData[key] || 0;
+    //         if (filter.type && filter.rarity) {
+    //             // Example: totalhbyxrobuxrare
+    //             const key = `total${mfg}${filter.type}${filter.rarity}`;
+    //             totalDocs = AnalyticsData[key] || 0;
 
-            } else if (filter.type) {
-                // Sum all rarities for the given type
-                const rarities = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
-                totalDocs = rarities.reduce((sum, rarity) => {
-                    const key = `total${mfg}${filter.type}${rarity}`;
-                    return sum + (AnalyticsData[key] || 0);
-                }, 0);
+    //         } else if (filter.type) {
+    //             // Sum all rarities for the given type
+    //             const rarities = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
+    //             totalDocs = rarities.reduce((sum, rarity) => {
+    //                 const key = `total${mfg}${filter.type}${rarity}`;
+    //                 return sum + (AnalyticsData[key] || 0);
+    //             }, 0);
 
-            } else {
-                // Total from this manufacturer across all types (no type filter)
-                const types = ['ingame', 'exclusive', 'chest', 'robux', 'ticket'];
-                totalDocs = types.reduce((sum, type) => {
-                    const key = `total${mfg}${type}`;
-                    return sum + (AnalyticsData[key] || 0);
-                }, 0);
-            }
+    //         } else {
+    //             // Total from this manufacturer across all types (no type filter)
+    //             const types = ['ingame', 'exclusive', 'chest', 'robux', 'ticket'];
+    //             totalDocs = types.reduce((sum, type) => {
+    //                 const key = `total${mfg}${type}`;
+    //                 return sum + (AnalyticsData[key] || 0);
+    //             }, 0);
+    //         }
 
-        } else if (filter.type) {
-            switch (filter.type) {
-                case 'ingame':
-                case 'exclusive':
-                case 'chest':
-                case 'robux':
-                case 'ticket': {
-                    const prefix = `total${filter.type}`;
-                    const rarities = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
+    //     } else if (filter.type) {
+    //         switch (filter.type) {
+    //             case 'ingame':
+    //             case 'exclusive':
+    //             case 'chest':
+    //             case 'robux':
+    //             case 'ticket': {
+    //                 const prefix = `total${filter.type}`;
+    //                 const rarities = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
 
-                    if (filter.rarity) {
-                        const key = `${prefix}${filter.rarity}`;
-                        totalDocs = AnalyticsData[key] || 0;
-                    } else {
-                        totalDocs = rarities.reduce((sum, rarity) => {
-                            const key = `${prefix}${rarity}`;
-                            return sum + (AnalyticsData[key] || 0);
-                        }, 0);
-                    }
-                    break;
-                }
-            }
-        } else {
-            totalDocs = AnalyticsData.totaltoclaim + AnalyticsData.totaltogenerate + AnalyticsData.totalclaimed + AnalyticsData.totalexpired + AnalyticsData.totalapproved || 0;
-        }
+    //                 if (filter.rarity) {
+    //                     const key = `${prefix}${filter.rarity}`;
+    //                     totalDocs = AnalyticsData[key] || 0;
+    //                 } else {
+    //                     totalDocs = rarities.reduce((sum, rarity) => {
+    //                         const key = `${prefix}${rarity}`;
+    //                         return sum + (AnalyticsData[key] || 0);
+    //                     }, 0);
+    //                 }
+    //                 break;
+    //             }
+    //         }
+    //     } else {
+    //         totalDocs = AnalyticsData.totaltoclaim + AnalyticsData.totaltogenerate + AnalyticsData.totalclaimed + AnalyticsData.totalexpired + AnalyticsData.totalapproved || 0;
+    //     }
 
-
+    const codeAnalytics = await CodeAnalytics.findOne({}).lean();
+    let analyticsKey = buildAnalyticsKey({
+        manufacturer: manufact?.type, // or manufact?.name, depending on your mapping
+        type: filter.type,
+        rarity: filter.rarity,
+        status: filter.status
+    });
+    if (codeAnalytics && codeAnalytics.counts) {
+        totalDocs = codeAnalytics.counts[analyticsKey] || 0;
+    } else {
+        // fallback to DB count if analytics missing
+        totalDocs = await Code.countDocuments(filter);
+    }
     const totalPages = Math.ceil(totalDocs / pageOptions.limit);
 
     const lastcodeid = codes[codes.length - 1]?.index || 0;
@@ -1815,6 +1837,15 @@ exports.generateitemsoncode = async (req, res, next) => {
         let processed = 0;
         let batchNum = 1;
 
+        function buildAnalyticsKey({ manufacturer, type, rarity, status }) {
+            let key = '';
+            if (manufacturer) key += `M:${manufacturer}`;
+            if (type) key += (key ? '|' : '') + `TY:${type}`;
+            if (rarity) key += (key ? '|' : '') + `R:${rarity}`;
+            if (status) key += (key ? '|' : '') + `S:${status}`;
+            return key || 'T';
+        }
+
         try {
             let itemDocs = Array.isArray(itemid)
                 ? await Item.find({ _id: { $in: itemid } })
@@ -1850,11 +1881,9 @@ exports.generateitemsoncode = async (req, res, next) => {
                     ...idQuery, 
                     items: { $size: 0 } })
                     .select('_id index')
-                    // .sort({ index: -1 })
                     .limit(currentBatchSize);
 
                 if (codesBatch.length === 0) {
-
                     console.log(`No more codes available for batch ${batchNum}.`);
                     break;
                 }
@@ -1871,6 +1900,27 @@ exports.generateitemsoncode = async (req, res, next) => {
                             rarity: rarity
                         }
                     }
+                );
+
+                // Update CodeAnalytics flat keys for this batch
+                const analyticsKey = buildAnalyticsKey({
+                    manufacturer: manufact.type,
+                    type: type,
+                    rarity: rarity,
+                    status: "to-claim"
+                });
+                // Also update total and type keys
+                await CodeAnalytics.findOneAndUpdate(
+                    {},
+                    {
+                        $inc: {
+                            [`counts.${analyticsKey}`]: codesBatch.length,
+                            'counts.T': codesBatch.length,
+                            [`counts.TY:${type}`]: codesBatch.length,
+                            [`counts.M:${manufact.type}`]: codesBatch.length
+                        }
+                    },
+                    { upsert: true }
                 );
 
                 processed += codesBatch.length;

@@ -1,5 +1,6 @@
 const { Analytics } = require("../models/Analytics");
 const Code = require("../models/Code");
+const CodeAnalytics = require("../models/CodeAnalytics");
 const { getmanufacturerbyindex } = require("./manufacturerutil");
 
 
@@ -321,7 +322,7 @@ exports.syncAllAnalyticsUtility = async () => {
 
 
 
-exports.manualeditanalytics = async (req, res) => {
+exports.Zmanualeditanalytics = async (req, res) => {
     try {
   const analytics = {
                 // Status counters
@@ -532,3 +533,176 @@ exports.manualeditanalytics = async (req, res) => {
         return "error";
     }
 }
+
+
+// ...existing code...
+
+// Utility to increment a flat key in an object
+function incrementFlat(obj, key) {
+    if (!obj[key]) obj[key] = 0;
+    obj[key]++;
+}
+
+// Utility to build keys for each analytics level
+function buildKeys(code) {
+    const keys = [];
+    // Shortenings for legend
+
+    const manu = getmanufacturerbyindex(code.index);
+    const M = manu ? manu.type : null;
+    const TY = code.type;
+    const R = code.rarity;
+    const S = code.status;
+    const items = Array.isArray(code.items) ? code.items.map(i => i.toString()) : [];
+
+    // LEVEL ROOT
+    keys.push('T');
+    // LEVEL 1
+    if (M) keys.push(`M:${M}`);
+    if (TY) keys.push(`TY:${TY}`);
+    if (S) keys.push(`S:${S}`);
+    // LEVEL 2
+    if (M && TY) keys.push(`M:${M}|TY:${TY}`);
+    if (S && TY) keys.push(`S:${S}|TY:${TY}`);
+    if (TY && R) keys.push(`TY:${TY}|R:${R}`);
+    if (TY && items.length) items.forEach(I => keys.push(`TY:${TY}|I:${I}`));
+    // LEVEL 3
+    if (M && TY && R) keys.push(`M:${M}|TY:${TY}|R:${R}`);
+    if (TY && R && S) keys.push(`TY:${TY}|R:${R}|S:${S}`);
+    if (TY && R && items.length) items.forEach(I => keys.push(`TY:${TY}|R:${R}|I:${I}`));
+    // LEVEL 4
+    if (M && TY && R && S) keys.push(`M:${M}|TY:${TY}|R:${R}|S:${S}`);
+    if (M && TY && R && items.length) items.forEach(I => keys.push(`M:${M}|TY:${TY}|R:${R}|I:${I}`));
+    // LEVEL 5
+    if (M && TY && R && S && items.length) items.forEach(I => keys.push(`M:${M}|TY:${TY}|R:${R}|S:${S}|I:${I}`));
+    return keys;
+}
+
+exports.syncAllCodeAnalyticsUtility = async () => {
+    console.log("Starting full code analytics sync...");
+    const batchSize = 10000;
+    let lastId = null;
+    let hasMore = true;
+    let batchnumber = 0;
+    const counts = {};
+
+    while (hasMore) {
+        const codes = await Code.find(
+            lastId ? { _id: { $gt: lastId } } : {},
+            'index _id archived isUsed type rarity expiration status items manufacturer'
+        )
+            .sort({ _id: 1 })
+            .limit(batchSize)
+            .lean();
+
+        if (codes.length === 0) break;
+
+        codes.forEach(code => {
+            const keys = buildKeys(code);
+            keys.forEach(key => incrementFlat(counts, key));
+        });
+
+        lastId = codes[codes.length - 1]._id;
+        hasMore = codes.length === batchSize;
+        batchnumber++;
+        console.log(`Batch ${batchnumber} processed, last ID: ${lastId.toString()}`);
+        // console.log ever 100 batches
+        if (batchnumber % 100 === 0) {
+            console.log(counts);
+        }
+    }
+
+    await CodeAnalytics.findOneAndUpdate(
+        {},
+        { $set: { counts } },
+        { upsert: true }
+    );
+
+    console.log("Code analytics sync complete.");
+    return counts;
+}
+
+
+
+exports.setAllManualCodeAnalytics = async () => {
+    const manufacturers = ['hbyx', 'dyth', 'hbyx2', 'amx'];
+    const types = ['chest', 'ingame', 'exclusive', 'ticket', 'robux'];
+    const rarities = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
+    const statuses = ['to-claim', 'pre-claimed', 'approved', 'claimed'];
+    const items = []; // No items for now
+
+    // Your known counts for each manufacturer (adjust as needed)
+    const manufacturerCounts = {
+        hbyx: 7562500,
+        dyth: 5720000,
+        hbyx2: 16823530,
+        amx: 12235883
+    };
+
+    // Total codes
+    const total = Object.values(manufacturerCounts).reduce((a, b) => a + b, 0);
+
+    const counts = {};
+
+    // ROOT
+    counts['T'] = total;
+
+    // LEVEL 1
+    types.forEach(ty => counts[`TY:${ty}`] = ty === 'chest' ? total : 0);
+    manufacturers.forEach(m => counts[`M:${m}`] = manufacturerCounts[m] || 0);
+    statuses.forEach(s => counts[`S:${s}`] = 0);
+
+    // LEVEL 2
+    manufacturers.forEach(m => {
+        types.forEach(ty => counts[`M:${m}|TY:${ty}`] = ty === 'chest' ? manufacturerCounts[m] : 0);
+        statuses.forEach(s => counts[`M:${m}|S:${s}`] = 0);
+    });
+    types.forEach(ty => {
+        rarities.forEach(r => counts[`TY:${ty}|R:${r}`] = 0);
+        statuses.forEach(s => counts[`TY:${ty}|S:${s}`] = 0);
+    });
+    statuses.forEach(s => {
+        types.forEach(ty => counts[`S:${s}|TY:${ty}`] = 0);
+    });
+
+    // LEVEL 3
+    manufacturers.forEach(m => {
+        types.forEach(ty => {
+            rarities.forEach(r => counts[`M:${m}|TY:${ty}|R:${r}`] = 0);
+            statuses.forEach(s => counts[`M:${m}|TY:${ty}|S:${s}`] = 0);
+        });
+    });
+    types.forEach(ty => {
+        rarities.forEach(r => {
+            statuses.forEach(s => counts[`TY:${ty}|R:${r}|S:${s}`] = 0);
+        });
+    });
+
+    // LEVEL 4
+    manufacturers.forEach(m => {
+        types.forEach(ty => {
+            rarities.forEach(r => {
+                statuses.forEach(s => counts[`M:${m}|TY:${ty}|R:${r}|S:${s}`] = 0);
+            });
+        });
+    });
+
+    // LEVEL 5 (items, if you want to add in the future)
+    // manufacturers.forEach(m => {
+    //     types.forEach(ty => {
+    //         rarities.forEach(r => {
+    //             statuses.forEach(s => {
+    //                 items.forEach(i => counts[`M:${m}|TY:${ty}|R:${r}|S:${s}|I:${i}`] = 0);
+    //             });
+    //         });
+    //     });
+    // });
+
+    await CodeAnalytics.findOneAndUpdate(
+        {},
+        { $set: { counts } },
+        { upsert: true }
+    );
+
+    console.log("All manual CodeAnalytics keys set!");
+};
