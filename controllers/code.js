@@ -1877,10 +1877,12 @@ exports.generateitemsoncode = async (req, res, next) => {
                     status: `Processing batch ${batchNum} (${processed}/${codesamount})...`
                 });
 
+
+                // Fetch full previous state for analytics decrement
                 const codesBatch = await Code.find({ 
                     ...idQuery, 
                     items: { $size: 0 } })
-                    .select('_id index')
+                    .select('_id index type rarity status')
                     .limit(currentBatchSize);
 
                 if (codesBatch.length === 0) {
@@ -1889,6 +1891,23 @@ exports.generateitemsoncode = async (req, res, next) => {
                 }
 
                 console.log(`Found ${codesBatch.length} codes for batch ${batchNum}.`);
+
+
+                // Decrement analytics for previous state of each code
+                for (const code of codesBatch) {
+                    // Only decrement if the code is chest type (no rarity, no item)
+                    if (code.type === "chest") {
+                        const decObj = {};
+                        const keyManuType = buildAnalyticsKey({ manufacturer: manufact.type, type: "chest" });
+                        const keyTypeOnly = buildAnalyticsKey({ type: "chest" });
+                        decObj[`counts.${keyManuType}`] = -1;
+                        decObj[`counts.${keyTypeOnly}`] = -1;
+                        decObj['counts.T'] = -1;
+                        decObj['counts.TY:chest'] = -1;
+                        decObj[`counts.M:${manufact.type}`] = -1;
+                        await CodeAnalytics.findOneAndUpdate({}, { $inc: decObj }, { upsert: true });
+                    }
+                }
 
                 await Code.updateMany(
                     { _id: { $in: codesBatch.map(code => code._id) } },
@@ -1909,12 +1928,27 @@ exports.generateitemsoncode = async (req, res, next) => {
                     rarity: rarity,
                     status: "to-claim"
                 });
-                // Also update total and type keys
+                console.log(`Updating CodeAnalytics for key: ${analyticsKey}`);
+                // Also update total, type, manufacturer, and mid-level keys
+                // Manufacturer+type, manufacturer+type+rarity
+                const analyticsKeyType = buildAnalyticsKey({ manufacturer: manufact.type, type: type });
+                const analyticsKeyTypeRarity = buildAnalyticsKey({ manufacturer: manufact.type, type: type, rarity: rarity });
+
+                // Type-only keys
+                const analyticsKeyTypeOnly = buildAnalyticsKey({ type: type });
+                const analyticsKeyTypeOnlyRarity = buildAnalyticsKey({ type: type, rarity: rarity });
+                const analyticsKeyTypeOnlyRarityStatus = buildAnalyticsKey({ type: type, rarity: rarity, status: "to-claim" });
+
                 await CodeAnalytics.findOneAndUpdate(
                     {},
                     {
                         $inc: {
                             [`counts.${analyticsKey}`]: codesBatch.length,
+                            [`counts.${analyticsKeyType}`]: codesBatch.length,
+                            [`counts.${analyticsKeyTypeRarity}`]: codesBatch.length,
+                            [`counts.${analyticsKeyTypeOnly}`]: codesBatch.length,
+                            [`counts.${analyticsKeyTypeOnlyRarity}`]: codesBatch.length,
+                            [`counts.${analyticsKeyTypeOnlyRarityStatus}`]: codesBatch.length,
                             'counts.T': codesBatch.length,
                             [`counts.TY:${type}`]: codesBatch.length,
                             [`counts.M:${manufact.type}`]: codesBatch.length
