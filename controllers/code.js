@@ -1666,6 +1666,23 @@ async function updateAnalyticsOnArchive(code, direction = -1) {
 
     const result = await Analytics.findOneAndUpdate({}, analyticsUpdate, { new: true });
     console.log(`Updated analytics for code ${code._id}:`, result);
+
+    // --- Flat-keyed CodeAnalytics integration ---
+    // Use buildAnalyticsKey for previous state
+    if (code.type) {
+        const manu = code.manufacturer || (typeof getmanufacturerbyindex === 'function' ? getmanufacturerbyindex(code.index)?.type : undefined);
+        const key = buildAnalyticsKey({
+            manufacturer: manu,
+            type: code.type,
+            rarity: code.rarity,
+            status: code.status
+        });
+        if (key && key !== 'T') {
+            const incObj = {};
+            incObj[`counts.${key}`] = direction;
+            await CodeAnalytics.findOneAndUpdate({}, { $inc: incObj }, { upsert: true });
+        }
+    }
 }
 
 async function updateAnalyticsOnEdit(original, updated) {
@@ -1732,6 +1749,31 @@ async function updateAnalyticsOnEdit(original, updated) {
         ('Updating analytics:', analyticsUpdate);
         await Analytics.findOneAndUpdate({}, analyticsUpdate, { new: true });
     }
+
+    // --- Flat-keyed CodeAnalytics integration ---
+    // Decrement previous key, increment new key if status/type/rarity changed
+    if ((updated.status && updated.status !== original.status) || (updated.type && updated.type !== original.type) || (updated.rarity && updated.rarity !== original.rarity)) {
+        const manu = original.manufacturer || (typeof getmanufacturerbyindex === 'function' ? getmanufacturerbyindex(original.index)?.type : undefined);
+        const prevKey = buildAnalyticsKey({
+            manufacturer: manu,
+            type: original.type,
+            rarity: original.rarity,
+            status: original.status
+        });
+        const newManu = updated.manufacturer || manu;
+        const newKey = buildAnalyticsKey({
+            manufacturer: newManu,
+            type: updated.type || original.type,
+            rarity: updated.rarity || original.rarity,
+            status: updated.status || original.status
+        });
+        const incObj = {};
+        if (prevKey && prevKey !== 'T') incObj[`counts.${prevKey}`] = -1;
+        if (newKey && newKey !== 'T') incObj[`counts.${newKey}`] = 1;
+        if (Object.keys(incObj).length > 0) {
+            await CodeAnalytics.findOneAndUpdate({}, { $inc: incObj }, { upsert: true });
+        }
+    }
 }
 
 exports.resetcode = async (req, res) => {
@@ -1751,28 +1793,29 @@ exports.resetcode = async (req, res) => {
 
     if (!code) return res.status(400).json({ message: "bad-request", data: "Code does not exist!" });
 
-    // check code status
+    // Update flat-keyed analytics
+    if (code.status === "claimed" || code.status === "approved" || code.status === "rejected") {
+        // Decrement previous state key
 
-        if (
-            code.status === "claimed" ||
-            code.status === "approved" ||
-            code.status === "rejected"
-        ) {
-            // Build analytics update
-            const analyticsUpdate = {
-                $inc: {
-                    totaltoclaim: 1,
-                    totalclaimed: code.status === "claimed" ? -1 : 0,
-                    totalapproved: code.status === "approved" ? -1 : 0,
-                    [`total${code.type}${code.rarity}`]: code.status === "claimed" ? -1 : 0,
-                    [`total${code.type}${code.rarity}`]: code.status === "approved" ? -1 : 0,
-                    [`total${code.type}claimed`]: code.status === "claimed" ? -1 : 0,
-                    [`total${code.type}unclaimed`]: 1
-                }
-            };
+        const manu = getmanufacturerbyindex(code.index)
+        const prevKey = buildAnalyticsKey({
+            manufacturer: manu.type || undefined,
+            type: code.type,
+            rarity: code.rarity,
+            status: code.status
+        });
 
-            await Analytics.findOneAndUpdate({}, analyticsUpdate, { new: true });
-        }
+        const newKey = buildAnalyticsKey({
+            manufacturer: manu.type || undefined,
+            type: code.type,
+            rarity: code.rarity,
+            status: "to-claim"
+        });
+        const decObj = {};
+        if (prevKey && prevKey !== 'T') decObj[`counts.${prevKey}`] = -1;
+        if (newKey && newKey !== 'T') decObj[`counts.${newKey}`] = 1;
+        await CodeAnalytics.findOneAndUpdate({}, { $inc: decObj }, { upsert: true });
+    }
 
     code.isUsed = false;
     code.status = "to-claim"; // Reset status to "to-claim" or "to-generate" based on your logic
@@ -1902,8 +1945,6 @@ exports.generateitemsoncode = async (req, res, next) => {
                         const keyTypeOnly = buildAnalyticsKey({ type: "chest" });
                         decObj[`counts.${keyManuType}`] = -1;
                         decObj[`counts.${keyTypeOnly}`] = -1;
-                        decObj['counts.T'] = -1;
-                        decObj['counts.TY:chest'] = -1;
                         decObj[`counts.M:${manufact.type}`] = -1;
                         await CodeAnalytics.findOneAndUpdate({}, { $inc: decObj }, { upsert: true });
                     }
@@ -1949,7 +1990,6 @@ exports.generateitemsoncode = async (req, res, next) => {
                             [`counts.${analyticsKeyTypeOnly}`]: codesBatch.length,
                             [`counts.${analyticsKeyTypeOnlyRarity}`]: codesBatch.length,
                             [`counts.${analyticsKeyTypeOnlyRarityStatus}`]: codesBatch.length,
-                            'counts.T': codesBatch.length,
                             [`counts.TY:${type}`]: codesBatch.length,
                             [`counts.M:${manufact.type}`]: codesBatch.length
                         }
