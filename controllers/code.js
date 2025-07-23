@@ -56,6 +56,15 @@ exports.newgeneratecode = async (req, res) => {
     }
 };
 
+function buildAnalyticsKey({ manufacturer, type, rarity, status }) {
+    let key = '';
+    if (manufacturer) key += `M:${manufacturer}`;
+    if (type) key += (key ? '|' : '') + `TY:${type}`;
+    if (rarity) key += (key ? '|' : '') + `R:${rarity}`;
+    if (status) key += (key ? '|' : '') + `S:${status}`;
+    return key || 'T'; // 'T' for total if no filter
+}
+
 async function saveWithFallback(data, maxRetries = 3) {
     let attempts = 0;
     let currentData = [...data]; // Make a copy of the original data
@@ -160,6 +169,37 @@ async function handleCodeGeneration(data) {
             else if (type === 'ticket') ticketsswitchcase(rarity, batchData.length, analyticsUpdate);
 
             await Analytics.findOneAndUpdate({}, analyticsUpdate, { new: true });
+
+        const keysToUpdate = [
+            // Manufacturer-prefixed keys
+            buildAnalyticsKey({ manufacturer: manufact.type, type, rarity, status: "to-claim" }),
+            buildAnalyticsKey({ manufacturer: manufact.type, type, rarity }),
+            buildAnalyticsKey({ manufacturer: manufact.type, type }),
+            buildAnalyticsKey({ manufacturer: manufact.type }),
+
+            // Type-only keys
+            buildAnalyticsKey({ type, rarity, status: "to-claim" }),
+            buildAnalyticsKey({ type, rarity }),
+            buildAnalyticsKey({ type }),
+
+            // Status-only key
+            buildAnalyticsKey({ status: "to-claim" }),
+
+            // Global total key
+            "T"
+        ];
+
+        const incObj = {};
+        keysToUpdate.forEach(key => {
+            if (key && key !== 'T') incObj[`counts.${key}`] = codesBatch.length;
+            else if (key === 'T') incObj['counts.T'] = codesBatch.length;
+        });
+
+        await CodeAnalytics.findOneAndUpdate(
+            {},
+            { $inc: incObj },
+            { upsert: true }
+        );
             tempbatch++;
         }
 
@@ -172,14 +212,7 @@ async function handleCodeGeneration(data) {
 }
 
 
-function buildAnalyticsKey({ manufacturer, type, rarity, status }) {
-    let key = '';
-    if (manufacturer) key += `M:${manufacturer}`;
-    if (type) key += (key ? '|' : '') + `TY:${type}`;
-    if (rarity) key += (key ? '|' : '') + `R:${rarity}`;
-    if (status) key += (key ? '|' : '') + `S:${status}`;
-    return key || 'T'; // 'T' for total if no filter
-}
+
 // async function handleCodeGeneration(data) {
 //     const { socketid, expiration, codeamount, items, type, length, rarity } = data;
 
@@ -1067,17 +1100,47 @@ exports.checkcode = async (req, res) => {
         codeExists.name = username;
         codeExists.isUsed = true;
         codeExists.status = "claimed";
-
-        await Analytics.findOneAndUpdate({},
-            { $inc: { totalclaimed: 1, totaltoclaim: -1, [`totalclaimed${codeExists.type}`]: 1, [`totalclaimed${codeExists.type}`]: -1 } },
-            { new: true }
-        )
-        .then(data => data)
-        .catch(err => {
-            console.log(`There's a problem updating the analytics. Error ${err}`);
-            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
-        });
         
+        const manu = typeof getmanufacturerbyindex === 'function'
+            ? getmanufacturerbyindex(codeExists.index)?.type
+            : codeExists.manufacturer;
+
+        const prevStatus = codeExists.status === "pre-claimed" ? "pre-claimed" : "to-claim";
+        const prevKey = buildAnalyticsKey({
+            manufacturer: manu,
+            type: codeExists.type,
+            rarity: codeExists.rarity,
+            status: prevStatus
+        });
+        const newKey = buildAnalyticsKey({
+            manufacturer: manu,
+            type: codeExists.type,
+            rarity: codeExists.rarity,
+            status: "claimed"
+        });
+
+        // Build all deeper keys for the new status
+        const keysToUpdate = [
+            prevKey,
+            newKey,
+            buildAnalyticsKey({ manufacturer: manu, type: codeExists.type, rarity: codeExists.rarity, status: "claimed" }),
+            buildAnalyticsKey({ manufacturer: manu, type: codeExists.type, status: "claimed" }),
+            buildAnalyticsKey({ manufacturer: manu, status: "claimed" }),
+            buildAnalyticsKey({ type: codeExists.type, rarity: codeExists.rarity, status: "claimed" }),
+            buildAnalyticsKey({ type: codeExists.type, status: "claimed" }),
+            buildAnalyticsKey({ status: "claimed" }),
+            "T"
+        ];
+
+        const incObj = {};
+        keysToUpdate.forEach(key => {
+            if (key === prevKey) incObj[`counts.${key}`] = -1;
+            else if (key !== "T") incObj[`counts.${key}`] = 1;
+            else incObj['counts.T'] = 0; // Usually total doesn't change on claim, unless you want to track total claimed separately
+        });
+
+        await CodeAnalytics.findOneAndUpdate({}, { $inc: incObj }, { upsert: true });
+
         await RedeemedCodeAnalytics.create({
             code: codeExists._id,
         })
@@ -1087,7 +1150,48 @@ exports.checkcode = async (req, res) => {
             return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
         });
     } else if (codeExists.type === 'robux' || codeExists.type === 'ticket') {
-        codeExists.status = "pre-claimed"        
+        codeExists.status = "pre-claimed"  
+        
+        
+        const manu = typeof getmanufacturerbyindex === 'function'
+            ? getmanufacturerbyindex(codeExists.index)?.type
+            : codeExists.manufacturer;
+
+        const prevStatus = codeExists.status === "pre-claimed" ? "pre-claimed" : "to-claim";
+        const prevKey = buildAnalyticsKey({
+            manufacturer: manu,
+            type: codeExists.type,
+            rarity: codeExists.rarity,
+            status: prevStatus
+        });
+        const newKey = buildAnalyticsKey({
+            manufacturer: manu,
+            type: codeExists.type,
+            rarity: codeExists.rarity,
+            status: "pre-claimed"
+        });
+
+        // Build all deeper keys for the new status
+        const keysToUpdate = [
+            prevKey,
+            newKey,
+            buildAnalyticsKey({ manufacturer: manu, type: codeExists.type, rarity: codeExists.rarity, status: "claimed" }),
+            buildAnalyticsKey({ manufacturer: manu, type: codeExists.type, status: "claimed" }),
+            buildAnalyticsKey({ manufacturer: manu, status: "claimed" }),
+            buildAnalyticsKey({ type: codeExists.type, rarity: codeExists.rarity, status: "claimed" }),
+            buildAnalyticsKey({ type: codeExists.type, status: "claimed" }),
+            buildAnalyticsKey({ status: "claimed" }),
+            "T"
+        ];
+
+        const incObj = {};
+        keysToUpdate.forEach(key => {
+            if (key === prevKey) incObj[`counts.${key}`] = -1;
+            else if (key !== "T") incObj[`counts.${key}`] = 1;
+            else incObj['counts.T'] = 0; // Usually total doesn't change on claim, unless you want to track total claimed separately
+        });
+
+        await CodeAnalytics.findOneAndUpdate({}, { $inc: incObj }, { upsert: true });
     }
 
     await Inventory.create({
@@ -1190,16 +1294,45 @@ exports.redeemcode = async (req, res) => {
         codeExists.status = "claimed";
 
         await codeExists.save();
-        await Analytics.findOneAndUpdate({},
-            { $inc: { totalclaimed: 1, totaltoclaim: -1, [`totalclaimed${codeExists.type}`]: 1, [`totalclaimed${codeExists.type}`]: -1 } },
-            { new: true }
-        )
-        .then(data => data)
-        .catch(err => {
-            console.log(`There's a problem updating the analytics. Error ${err}`);
-            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+        const manu = typeof getmanufacturerbyindex === 'function'
+            ? getmanufacturerbyindex(codeExists.index)?.type
+            : codeExists.manufacturer;
+
+        const prevStatus = codeExists.status === "pre-claimed" ? "pre-claimed" : "to-claim";
+        const prevKey = buildAnalyticsKey({
+            manufacturer: manu,
+            type: codeExists.type,
+            rarity: codeExists.rarity,
+            status: prevStatus
+        });
+        const newKey = buildAnalyticsKey({
+            manufacturer: manu,
+            type: codeExists.type,
+            rarity: codeExists.rarity,
+            status: "claimed"
         });
 
+        // Build all deeper keys for the new status
+        const keysToUpdate = [
+            prevKey,
+            newKey,
+            buildAnalyticsKey({ manufacturer: manu, type: codeExists.type, rarity: codeExists.rarity, status: "claimed" }),
+            buildAnalyticsKey({ manufacturer: manu, type: codeExists.type, status: "claimed" }),
+            buildAnalyticsKey({ manufacturer: manu, status: "claimed" }),
+            buildAnalyticsKey({ type: codeExists.type, rarity: codeExists.rarity, status: "claimed" }),
+            buildAnalyticsKey({ type: codeExists.type, status: "claimed" }),
+            buildAnalyticsKey({ status: "claimed" }),
+            "T"
+        ];
+
+        const incObj = {};
+        keysToUpdate.forEach(key => {
+            if (key === prevKey) incObj[`counts.${key}`] = -1;
+            else if (key !== "T") incObj[`counts.${key}`] = 1;
+            else incObj['counts.T'] = 0; // Usually total doesn't change on claim, unless you want to track total claimed separately
+        });
+
+        await CodeAnalytics.findOneAndUpdate({}, { $inc: incObj }, { upsert: true });
         await RedeemedCodeAnalytics.create({
             code: codeExists._id,
         })
@@ -1234,15 +1367,45 @@ exports.redeemcode = async (req, res) => {
         codeExists.status = "claimed";
 
         await codeExists.save();
-        await Analytics.findOneAndUpdate({},
-            { $inc: { totalclaimed: 1, totaltoclaim: -1 } },
-            { new: true }
-        )
-        .then(data => data)
-        .catch(err => {
-            console.log(`There's a problem updating the analytics. Error ${err}`);
-            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
+        const manu = typeof getmanufacturerbyindex === 'function'
+            ? getmanufacturerbyindex(codeExists.index)?.type
+            : codeExists.manufacturer;
+
+        const prevStatus = codeExists.status === "pre-claimed" ? "pre-claimed" : "to-claim";
+        const prevKey = buildAnalyticsKey({
+            manufacturer: manu,
+            type: codeExists.type,
+            rarity: codeExists.rarity,
+            status: prevStatus
         });
+        const newKey = buildAnalyticsKey({
+            manufacturer: manu,
+            type: codeExists.type,
+            rarity: codeExists.rarity,
+            status: "claimed"
+        });
+
+        // Build all deeper keys for the new status
+        const keysToUpdate = [
+            prevKey,
+            newKey,
+            buildAnalyticsKey({ manufacturer: manu, type: codeExists.type, rarity: codeExists.rarity, status: "claimed" }),
+            buildAnalyticsKey({ manufacturer: manu, type: codeExists.type, status: "claimed" }),
+            buildAnalyticsKey({ manufacturer: manu, status: "claimed" }),
+            buildAnalyticsKey({ type: codeExists.type, rarity: codeExists.rarity, status: "claimed" }),
+            buildAnalyticsKey({ type: codeExists.type, status: "claimed" }),
+            buildAnalyticsKey({ status: "claimed" }),
+            "T"
+        ];
+
+        const incObj = {};
+        keysToUpdate.forEach(key => {
+            if (key === prevKey) incObj[`counts.${key}`] = -1;
+            else if (key !== "T") incObj[`counts.${key}`] = 1;
+            else incObj['counts.T'] = 0; // Usually total doesn't change on claim, unless you want to track total claimed separately
+        });
+
+        await CodeAnalytics.findOneAndUpdate({}, { $inc: incObj }, { upsert: true });
         
         await RedeemedCodeAnalytics.create({
             code: codeExists._id,
@@ -1322,6 +1485,43 @@ exports.approverejectcode = async (req, res) => {
                 });
         }
     }
+
+        const manu = typeof getmanufacturerbyindex === 'function'
+        ? getmanufacturerbyindex(codeExists.index)?.type
+        : codeExists.manufacturer;
+
+        const prevKey = buildAnalyticsKey({
+            manufacturer: manu,
+            type: codeExists.type,
+            rarity: codeExists.rarity,
+            status: "claimed"
+        });
+        const newKey = buildAnalyticsKey({
+            manufacturer: manu,
+            type: codeExists.type,
+            rarity: codeExists.rarity,
+            status: "approved"
+        });
+        const keysToUpdate = [
+            prevKey,
+            newKey,
+            buildAnalyticsKey({ manufacturer: manu, type: code.type, rarity: code.rarity, status }),
+            buildAnalyticsKey({ manufacturer: manu, type: code.type, status }),
+            buildAnalyticsKey({ manufacturer: manu, status }),
+            buildAnalyticsKey({ type: code.type, rarity: code.rarity, status }),
+            buildAnalyticsKey({ type: code.type, status }),
+            buildAnalyticsKey({ status }),
+            "T"
+        ];
+        const incObj = {};
+        keysToUpdate.forEach(key => {
+            if (key === prevKey) incObj[`counts.${key}`] = -1;
+            else if (key === newKey) incObj[`counts.${key}`] = 1;
+            else if (key === "T") incObj[`counts.${key}`] = 0;
+        });
+
+        await CodeAnalytics.findOneAndUpdate({}, { $inc: incObj }, { upsert: true });
+
 
     await Analytics.findOneAndUpdate({},
         { $inc: { totalapproved: status === "approved" ? 1 : 0, totalclaimed: -1 } },
@@ -1874,161 +2074,156 @@ exports.generateitemsoncode = async (req, res, next) => {
     // Return success immediately to avoid timeout
     res.json({ message: "success", status: "generation-started" });
 
-    // Start background processing
-    (async () => {
-        const batchSize = 1000;
-        let processed = 0;
-        let batchNum = 1;
+// Start background processing
+(async () => {
+    const batchSize = 1000;
+    let processed = 0;
+    let batchNum = 1;
+    let totalUpdated = 0;
 
-        function buildAnalyticsKey({ manufacturer, type, rarity, status }) {
-            let key = '';
-            if (manufacturer) key += `M:${manufacturer}`;
-            if (type) key += (key ? '|' : '') + `TY:${type}`;
-            if (rarity) key += (key ? '|' : '') + `R:${rarity}`;
-            if (status) key += (key ? '|' : '') + `S:${status}`;
-            return key || 'T';
-        }
+    function buildAnalyticsKey({ manufacturer, type, rarity, status }) {
+        let key = '';
+        if (manufacturer) key += `M:${manufacturer}`;
+        if (type) key += (key ? '|' : '') + `TY:${type}`;
+        if (rarity) key += (key ? '|' : '') + `R:${rarity}`;
+        if (status) key += (key ? '|' : '') + `S:${status}`;
+        return key || 'T';
+    }
 
-        try {
-            let itemDocs = Array.isArray(itemid)
-                ? await Item.find({ _id: { $in: itemid } })
-                : [await Item.findById(itemid)];
-            if (!itemDocs || itemDocs.length === 0) {
-                io.to(socketid).emit('generate-items-progress', {
-                    percentage: 100,
-                    status: 'failed',
-                    message: "Item does not exist!",
-                    success: false
-                });
-                return;
-            }
-            const itemIds = itemDocs.map(item => item._id);
+    try {
+        let itemDocs = Array.isArray(itemid)
+            ? await Item.find({ _id: { $in: itemid } })
+            : [await Item.findById(itemid)];
 
-            const gtId = manufact.gt;
-            const lteId = manufact.lte;
-            const idQuery = gtId ? { _id: { $gt: gtId, $lte: lteId } } : { _id: { $lte: lteId } };
-
-            while (processed < codesamount) {
-                const remaining = codesamount - processed;
-                const currentBatchSize = Math.min(batchSize, remaining);
-
-                console.log(`Processing batch ${batchNum} with size ${currentBatchSize}...`);
-
-                console.log(`Querying for codes with IDs ${idQuery._id.$gt || ''} to ${idQuery._id.$lte || ''}...`);
-                io.to(socketid).emit('generate-items-progress', {
-                    percentage: Math.round((processed / codesamount) * 100),
-                    status: `Processing batch ${batchNum} (${processed}/${codesamount})...`
-                });
-
-
-                // Fetch full previous state for analytics decrement
-                const codesBatch = await Code.find({ 
-                    ...idQuery, 
-                    items: { $size: 0 } })
-                    .select('_id index type rarity status')
-                    .limit(currentBatchSize);
-
-                if (codesBatch.length === 0) {
-                    console.log(`No more codes available for batch ${batchNum}.`);
-                    break;
-                }
-
-                console.log(`Found ${codesBatch.length} codes for batch ${batchNum}.`);
-
-
-                // Decrement analytics for previous state of each code
-                for (const code of codesBatch) {
-                    // Only decrement if the code is chest type (no rarity, no item)
-                    if (code.type === "chest") {
-                        const decObj = {};
-                        const keyManuType = buildAnalyticsKey({ manufacturer: manufact.type, type: "chest" });
-                        const keyTypeOnly = buildAnalyticsKey({ type: "chest" });
-                        decObj[`counts.${keyManuType}`] = -1;
-                        decObj[`counts.${keyTypeOnly}`] = -1;
-                        decObj[`counts.M:${manufact.type}`] = -1;
-                        await CodeAnalytics.findOneAndUpdate({}, { $inc: decObj }, { upsert: true });
-                    }
-                }
-
-                await Code.updateMany(
-                    { _id: { $in: codesBatch.map(code => code._id) } },
-                    {
-                        $set: {
-                            items: itemIds,
-                            status: "to-claim",
-                            type: type,
-                            rarity: rarity
-                        }
-                    }
-                );
-
-                // Update CodeAnalytics flat keys for this batch
-                const analyticsKey = buildAnalyticsKey({
-                    manufacturer: manufact.type,
-                    type: type,
-                    rarity: rarity,
-                    status: "to-claim"
-                });
-                console.log(`Updating CodeAnalytics for key: ${analyticsKey}`);
-                // Also update total, type, manufacturer, and mid-level keys
-                // Manufacturer+type, manufacturer+type+rarity
-                const analyticsKeyType = buildAnalyticsKey({ manufacturer: manufact.type, type: type });
-                const analyticsKeyTypeRarity = buildAnalyticsKey({ manufacturer: manufact.type, type: type, rarity: rarity });
-
-                // Type-only keys
-                const analyticsKeyTypeOnly = buildAnalyticsKey({ type: type });
-                const analyticsKeyTypeOnlyRarity = buildAnalyticsKey({ type: type, rarity: rarity });
-                const analyticsKeyTypeOnlyRarityStatus = buildAnalyticsKey({ type: type, rarity: rarity, status: "to-claim" });
-
-                await CodeAnalytics.findOneAndUpdate(
-                    {},
-                    {
-                        $inc: {
-                            [`counts.${analyticsKey}`]: codesBatch.length,
-                            [`counts.${analyticsKeyType}`]: codesBatch.length,
-                            [`counts.${analyticsKeyTypeRarity}`]: codesBatch.length,
-                            [`counts.${analyticsKeyTypeOnly}`]: codesBatch.length,
-                            [`counts.${analyticsKeyTypeOnlyRarity}`]: codesBatch.length,
-                            [`counts.${analyticsKeyTypeOnlyRarityStatus}`]: codesBatch.length,
-                            [`counts.TY:${type}`]: codesBatch.length,
-                            [`counts.M:${manufact.type}`]: codesBatch.length
-                        }
-                    },
-                    { upsert: true }
-                );
-
-                processed += codesBatch.length;
-
-                const percentage = Math.round((processed / codesamount) * 100);
-                io.to(socketid).emit('generate-items-progress', {
-                    percentage,
-                    status: `Processing batch ${batchNum} (${processed}/${codesamount})`,
-                    processed,
-                    total: codesamount,
-                    success: true
-                });
-
-                console.log(`Processed batch ${batchNum}: ${codesBatch.length} codes, total processed: ${processed}`);
-                batchNum++;
-            }
-
-            io.to(socketid).emit('generate-items-progress', {
-                percentage: 100,
-                status: 'Complete',
-                processed,
-                type,
-                rarity,
-                manufacturer: manufacturer,
-                success: true
-            });
-        } catch (error) {
-            console.error(`Error generating items on codes: ${error.message}`);
+        if (!itemDocs || itemDocs.length === 0) {
             io.to(socketid).emit('generate-items-progress', {
                 percentage: 100,
                 status: 'failed',
-                message: error.message,
+                message: "Item does not exist!",
                 success: false
             });
+            return;
         }
-    })();
+
+        const itemIds = itemDocs.map(item => item._id);
+        const gtId = manufact.gt;
+        const lteId = manufact.lte;
+        const idQuery = gtId ? { _id: { $gt: gtId, $lte: lteId } } : { _id: { $lte: lteId } };
+
+        while (processed < codesamount) {
+            const remaining = codesamount - processed;
+            const currentBatchSize = Math.min(batchSize, remaining);
+
+            console.log(`Processing batch ${batchNum} with size ${currentBatchSize}...`);
+            console.log(`Querying for codes with IDs ${idQuery._id.$gt || ''} to ${idQuery._id.$lte || ''}...`);
+
+            io.to(socketid).emit('generate-items-progress', {
+                percentage: Math.round((processed / codesamount) * 100),
+                status: `Processing batch ${batchNum} (${processed}/${codesamount})...`
+            });
+
+            const codesBatch = await Code.find({ 
+                ...idQuery, 
+                items: { $size: 0 } 
+            })
+            .select('_id index type rarity status')
+            .limit(currentBatchSize);
+
+            if (codesBatch.length === 0) {
+                console.log(`No more codes available for batch ${batchNum}.`);
+                break;
+            }
+
+            console.log(`Found ${codesBatch.length} codes for batch ${batchNum}.`);
+
+            for (const code of codesBatch) {
+                if (code.type === "chest") {
+                    const decObj = {};
+                    const keyManuType = buildAnalyticsKey({ manufacturer: manufact.type, type: "chest" });
+                    const keyTypeOnly = buildAnalyticsKey({ type: "chest" });
+                    decObj[`counts.${keyManuType}`] = -1;
+                    decObj[`counts.${keyTypeOnly}`] = -1;
+                    decObj[`counts.M:${manufact.type}`] = -1;
+                    await CodeAnalytics.findOneAndUpdate({}, { $inc: decObj }, { upsert: true });
+                }
+            }
+
+            await Code.updateMany(
+                { _id: { $in: codesBatch.map(code => code._id) } },
+                {
+                    $set: {
+                        items: itemIds,
+                        status: "to-claim",
+                        type: type,
+                        rarity: rarity
+                    }
+                }
+            );
+
+            totalUpdated += codesBatch.length;
+            processed += codesBatch.length;
+
+            io.to(socketid).emit('generate-items-progress', {
+                percentage: Math.round((processed / codesamount) * 100),
+                status: `Processing batch ${batchNum} (${processed}/${codesamount})`,
+                processed,
+                total: codesamount,
+                success: true
+            });
+
+            console.log(`Processed batch ${batchNum}: ${codesBatch.length} codes, total processed: ${processed}`);
+            batchNum++;
+        }
+
+        // 🔁 Perform CodeAnalytics update once at the end
+        if (totalUpdated > 0) {
+            const analyticsKey = buildAnalyticsKey({
+                manufacturer: manufact.type,
+                type: type,
+                rarity: rarity,
+                status: "to-claim"
+            });
+
+            const analyticsKeyType = buildAnalyticsKey({ manufacturer: manufact.type, type: type });
+            const analyticsKeyTypeRarity = buildAnalyticsKey({ manufacturer: manufact.type, type: type, rarity: rarity });
+            const analyticsKeyTypeOnly = buildAnalyticsKey({ type: type });
+            const analyticsKeyTypeOnlyRarity = buildAnalyticsKey({ type: type, rarity: rarity });
+            const analyticsKeyTypeOnlyRarityStatus = buildAnalyticsKey({ type: type, rarity: rarity, status: "to-claim" });
+
+            const incObj = {
+                [`counts.${analyticsKey}`]: totalUpdated,
+                [`counts.${analyticsKeyType}`]: totalUpdated,
+                [`counts.${analyticsKeyTypeRarity}`]: totalUpdated,
+                [`counts.${analyticsKeyTypeOnly}`]: totalUpdated,
+                [`counts.${analyticsKeyTypeOnlyRarity}`]: totalUpdated,
+                [`counts.${analyticsKeyTypeOnlyRarityStatus}`]: totalUpdated,
+                [`counts.TY:${type}`]: totalUpdated,
+                [`counts.M:${manufact.type}`]: totalUpdated
+            };
+
+            console.log(`Final analytics update with ${totalUpdated} items...`);
+            await CodeAnalytics.findOneAndUpdate({}, { $inc: incObj }, { upsert: true });
+        }
+
+        io.to(socketid).emit('generate-items-progress', {
+            percentage: 100,
+            status: 'Complete',
+            processed,
+            type,
+            rarity,
+            manufacturer: manufacturer,
+            success: true
+        });
+
+    } catch (error) {
+        console.error(`Error generating items on codes: ${error.message}`);
+        io.to(socketid).emit('generate-items-progress', {
+            percentage: 100,
+            status: 'failed',
+            message: error.message,
+            success: false
+        });
+    }
+})();
+
 };
