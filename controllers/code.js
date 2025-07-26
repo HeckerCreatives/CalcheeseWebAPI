@@ -24,45 +24,47 @@ const CHARSET = 'ACDEFHJKLMNPRTUVXWY379';
 const CODE_LENGTH = 9;
 const BATCH_SIZE = 5000;
 
-exports.newgeneratecode = async (req, res) => {
-    const { socketid, expiration, codeamount, items, type, length, rarity } = req.body;
-
-    if (!expiration || !codeamount || !items) {
-        return res.status(400).json({ message: "failed", data: "Please fill in all the required fields!" });
-    }
-
-    if (codeamount <= 0) {
-        return res.status(400).json({ message: "failed", data: "Please enter a valid code amount!" });
-    }
-    if (!rarity || !["common", "uncommon", "rare", "epic", "legendary"].includes(rarity)) {
-        return res.status(400).json({ message: "failed", data: "Please select a valid rarity!" });
-    }
-
-    const checkmainte = await checkmaintenance("generate");
-    if (checkmainte === "maintenance") {
-        return res.status(400).json({ message: "maintenance", data: "Code generation is currently under maintenance. Please try again later." });
-    }
-
-    try {
-        
-        setImmediate(() => handleCodeGeneration(req.body, socketid));
-
-        res.json({ message: "success" });
-    } catch (err) {
-        return res.status(400).json({ 
-            message: "bad-request", 
-            data: "There's a problem with the server! Please contact customer support for more details." 
-        });
-    }
-};
-
-function buildAnalyticsKey({ manufacturer, type, rarity, status }) {
+function buildAnalyticsKey({ manufacturer, type, rarity, status, items }) {
     let key = '';
-    if (manufacturer) key += `M:${manufacturer}`;
-    if (type) key += (key ? '|' : '') + `TY:${type}`;
-    if (rarity) key += (key ? '|' : '') + `R:${rarity}`;
-    if (status) key += (key ? '|' : '') + `S:${status}`;
-    return key || 'T'; // 'T' for total if no filter
+    let keys = [];
+    if (manufacturer) keys.push(`M:${manufacturer}`);
+    if (type) keys.push(`TY:${type}`);
+    if (rarity) keys.push(`R:${rarity}`);
+    if (status) keys.push(`S:${status}`);
+    if (items) keys.push(`I:${items.join(',')}`);
+    return keys.length > 0 ? keys.join('|') : 'T'; // 'T' for total if no filter
+}
+
+function buildMultipleAnalyticsKey({ manufacturer, type, rarity, status, items }) {
+    const keys = [];
+    const M = manufacturer;
+    const TY = type;
+    const R = rarity;
+    const S = status;
+    const I = Array.isArray(items) ? items.map(i => i.toString()) : [];
+
+    // LEVEL ROOT
+    keys.push('T');
+    // LEVEL 1
+    if (M) keys.push(`M:${M}`);
+    if (TY) keys.push(`TY:${TY}`);
+    if (S) keys.push(`S:${S}`);
+    // LEVEL 2
+    if (M && TY) keys.push(`M:${M}|TY:${TY}`);
+    if (S && TY) keys.push(`S:${S}|TY:${TY}`);
+    if (TY && R) keys.push(`TY:${TY}|R:${R}`);
+    if (TY && I.length) I.forEach(item => keys.push(`TY:${TY}|I:${item}`));
+    // LEVEL 3
+    if (M && TY && R) keys.push(`M:${M}|TY:${TY}|R:${R}`);
+    if (TY && R && S) keys.push(`TY:${TY}|R:${R}|S:${S}`);
+    if (TY && R && I.length) I.forEach(item => keys.push(`TY:${TY}|R:${R}|I:${item}`));
+    // LEVEL 4
+    if (M && TY && R && S) keys.push(`M:${M}|TY:${TY}|R:${R}|S:${S}`);
+    if (M && TY && R && I.length) I.forEach(item => keys.push(`M:${M}|TY:${TY}|R:${R}|I:${item}`));
+    // LEVEL 5
+    if (M && TY && R && S && I.length) I.forEach(item => keys.push(`M:${M}|TY:${TY}|R:${R}|S:${S}|I:${item}`));
+
+    return keys;
 }
 
 async function saveWithFallback(data, maxRetries = 3) {
@@ -161,45 +163,25 @@ async function handleCodeGeneration(data) {
 
             await saveWithFallback(batchData);
 
-            const analyticsUpdate = { $inc: { totaltoclaim: batchData.length } };
-            if (type === 'ingame') ingameswitchcase(rarity, batchData.length, analyticsUpdate);
-            else if (type === 'exclusive') exclusiveswitchcase(rarity, batchData.length, analyticsUpdate);
-            else if (type === 'chest') chestswitchcase(rarity, batchData.length, analyticsUpdate);
-            else if (type === 'robux') robuxswitchcase(rarity, batchData.length, analyticsUpdate);
-            else if (type === 'ticket') ticketsswitchcase(rarity, batchData.length, analyticsUpdate);
+            const keysToUpdate = buildMultipleAnalyticsKey({
+                manufacturer: manufact.type,
+                type,
+                rarity,
+                status: "to-claim",
+                items
+            });
+            keysToUpdate.push("T"); // Always include the global total key
 
-            await Analytics.findOneAndUpdate({}, analyticsUpdate, { new: true });
+            const incObj = {};
+            keysToUpdate.forEach(key => {
+                incObj[`counts.${key}`] = codesBatch.length;
+            });
 
-        const keysToUpdate = [
-            // Manufacturer-prefixed keys
-            buildAnalyticsKey({ manufacturer: manufact.type, type, rarity, status: "to-claim" }),
-            buildAnalyticsKey({ manufacturer: manufact.type, type, rarity }),
-            buildAnalyticsKey({ manufacturer: manufact.type, type }),
-            buildAnalyticsKey({ manufacturer: manufact.type }),
-
-            // Type-only keys
-            buildAnalyticsKey({ type, rarity, status: "to-claim" }),
-            buildAnalyticsKey({ type, rarity }),
-            buildAnalyticsKey({ type }),
-
-            // Status-only key
-            buildAnalyticsKey({ status: "to-claim" }),
-
-            // Global total key
-            "T"
-        ];
-
-        const incObj = {};
-        keysToUpdate.forEach(key => {
-            if (key && key !== 'T') incObj[`counts.${key}`] = codesBatch.length;
-            else if (key === 'T') incObj['counts.T'] = codesBatch.length;
-        });
-
-        await CodeAnalytics.findOneAndUpdate(
-            {},
-            { $inc: incObj },
-            { upsert: true }
-        );
+            await CodeAnalytics.findOneAndUpdate(
+                {},
+                { $inc: incObj },
+                { upsert: true }
+            );
             tempbatch++;
         }
 
@@ -212,499 +194,37 @@ async function handleCodeGeneration(data) {
 }
 
 
+exports.newgeneratecode = async (req, res) => {
+    const { socketid, expiration, codeamount, items, type, length, rarity } = req.body;
 
-// async function handleCodeGeneration(data) {
-//     const { socketid, expiration, codeamount, items, type, length, rarity } = data;
+    if (!expiration || !codeamount || !items) {
+        return res.status(400).json({ message: "failed", data: "Please fill in all the required fields!" });
+    }
 
-//     console.log("socketid", socketid)
-//     console.log("expiration", expiration)
-//     console.log("codeamount", codeamount)
-//     console.log("items", items)
-//     console.log("type", type)
-//     console.log("length", length)
-//     console.log("rarity", rarity)
-//     console.log("STARTING CODE GENERATION")
+    if (codeamount <= 0) {
+        return res.status(400).json({ message: "failed", data: "Please enter a valid code amount!" });
+    }
+    if (!rarity || !["common", "uncommon", "rare", "epic", "legendary"].includes(rarity)) {
+        return res.status(400).json({ message: "failed", data: "Please select a valid rarity!" });
+    }
 
-//     console.log("SOCKET WILL SEND FIRST STATUS")
+    const checkmainte = await checkmaintenance("generate");
+    if (checkmainte === "maintenance") {
+        return res.status(400).json({ message: "maintenance", data: "Code generation is currently under maintenance. Please try again later." });
+    }
 
-//     io.emit('generate-progress', { 
-//         percentage: 0,
-//         status: 'Starting code generation...'
-//     });
-
-//     try{
-//         io.emit('generate-progress', { 
-//             percentage: 10,
-//             status: 'Generating code patterns...'
-//         });
-
-//         console.log("CODE LOGIC")
-
-//         const codes = [];
-//         const highestIndexCode = await Code.findOne().sort({ index: -1 });
-//         const totalCodes = highestIndexCode ? highestIndexCode.index : 0;
-
-//         let lastCode = (totalCodes || 0) + 1;
-//         let currentCode = lastCode;
-
-//         console.log(`Last code index: ${lastCode}`);
-//         io.to(socketid).emit('generate-progress', { 
-//             percentage: 40,
-//             status: `Preparing to save codes...`
-//         });
-
-//         let codeData = [];
-
-//         let tempbatch = 1
-//          if (type === "ticket") {
-//             for (let i = 0; i < codeamount; i++) {
-//                     currentCode = getNextCode(lastCode + i, length || 9);
-//                     codes.push(currentCode);
-
-//                     if (i % Math.max(1, Math.floor(codeamount / 10)) === 0) {
-//                         const percentage = Math.round((i / codeamount) * 80) + 10;
-//                         io.emit('generate-progress', { 
-//                             percentage,
-//                             status: `Generating code patterns... ${i}/${codeamount}`
-//                         });
-//                     }
-//                 }
-
-//                 const availableTickets = await Ticket.find({ status: "to-generate" })
-//                 if (!availableTickets || availableTickets.length === 0) {
-//                     io.emit('generate-progress', { 
-//                         percentage: 100,
-//                         status: 'failed',
-//                         success: false
-//                     });
-//                     return                 
-//                 }
-
-//                 if (codeamount > availableTickets.length) {
-//                     io.emit('generate-progress', { 
-//                         percentage: 100,
-//                         status: 'failed',
-//                         success: false
-//                     });
-//                     return                 
-//                 }
-
-//                 for (let i = 0; i < codeamount; i++) {
-//                     const ticketDoc = availableTickets[i];
-//                     ticketDoc.status = "to-claim";
-//                     await ticketDoc.save();
-
-//                     codeData.push({
-//                         expiration: expiration,
-//                         code: codes[i],
-//                         items: items,
-//                         ticket: ticketDoc._id,
-//                         type: "ticket",
-//                         isUsed: false,
-//                         index: lastCode + i + 1,
-//                         length: length || 9,
-//                         rarity: rarity
-//                     });
-//                 }
-//         } else if (type === "ingame" || type === "exclusive" || type === "chest" || type === "robux") {
-//             const BATCH_SIZE = 5000; // Reduced batch size
-//             let startIndex = (lastCode || 0);
-            
-//             for (let batchStart = 0; batchStart < codeamount; batchStart += BATCH_SIZE) {
-//                 // Start a new transaction for each batch
-
-//                 try {
-//                     const batchEnd = Math.min(batchStart + BATCH_SIZE, codeamount);
-//                     const batchData = [];
-
-//                     const percentage = Math.round(((batchEnd) / codeamount) * 40) + 50;
-//                     io.emit('generate-progress', {
-//                         percentage,
-//                         status: `Generating code for batch ${tempbatch}. Progress: ${batchEnd.toLocaleString()}/${codeamount.toLocaleString()}`
-//                     });
-                    
-//                     for (let i = 0; i < (batchEnd - batchStart); i++) {
-//                         const currentIndex = startIndex + batchStart + i;
-//                         const currentCode = getNextCode(currentIndex, length || 9);
-//                         batchData.push({
-//                             expiration: expiration,
-//                             code: currentCode,
-//                             items: items,
-//                             type: type,
-//                             isUsed: false,
-//                             index: currentIndex,
-//                             length: length || 9,
-//                             rarity: rarity
-//                         });
-//                     }
-                    
-
-
-//                     io.emit('generate-progress', {
-//                         percentage,
-//                         status: `Saving In-Game codes for batch ${tempbatch}. Progress: ${batchEnd.toLocaleString()}/${codeamount.toLocaleString()}`
-//                     });
-                    
-//                     // Replace the original line with:
-//                     await saveWithFallback(batchData);
-//                     const analyticsUpdate = { 
-//                         $inc: { 
-//                             totaltoclaim: batchData.length 
-//                         }
-//                     };
-
-//                     // Count codes by type and rarity
-//                         if (type === 'ingame') {
-//                             ingameswitchcase(rarity, BATCH_SIZE, analyticsUpdate);
-//                         } else if (type === 'exclusive') {
-//                             exclusiveswitchcase(rarity, BATCH_SIZE, analyticsUpdate);
-//                         } else if (type === 'chest') {
-//                             chestswitchcase(rarity, BATCH_SIZE, analyticsUpdate);
-//                         } else if (type === 'robux') {
-//                             robuxswitchcase(rarity, BATCH_SIZE, analyticsUpdate);
-//                         }
-
-//                     await Analytics.findOneAndUpdate({}, analyticsUpdate, { new: true });
-//                     tempbatch++
-//                 } catch (err) {
-//                     throw err;
-//                 } 
-//             }
-
-//         } else {
-//             io.emit('generate-progress', { 
-//                 percentage: 100,
-//                 status: 'failed',
-//                 success: false
-//             });
-//             return 
-//         }
-
-//         if (socketid) {
-//             io.to(socketid).emit('generate-progress', { 
-//                 percentage: 90,
-//                 status: 'Saving codes to database...'
-//             });
-//         }
-
-//         if(type === 'robux' || type === 'ticket') {
-
-//             await saveWithFallback(codeData);
-
-//             const update = { 
-//             $inc: { 
-//                 totaltoclaim: codeamount,
-//                 totaltogenerate: (type === 'robux' || type === 'ticket') ? -codeamount : 0
-//             }
-//             };  
-
-//             // Add rarity counts for robux codes
-//             if (type === 'robux') {
-//                 robuxswitchcase(rarity, codeamount, update);
-//             }
-//             // Add rarity counts for ticket codes
-//             if (type === 'ticket') {
-//                 ticketsswitchcase(rarity, codeamount, update)
-//             }
-
-//             await Analytics.findOneAndUpdate({}, update, { new: true });
-//         }
+    try {
         
-//         if (socketid) {
-//             io.to(socketid).emit('generate-progress', { 
-//                 percentage: 100,
-//                 status: 'Complete',
-//                 success: true
-//             });
-//         }
-//     }
-//     catch(err){
-//         console.log(`Transaction error code: ${err}`);
-//     }
-// }
-// async function handleCodeGeneration(data) {
-//     const { socketid, expiration, codeamount, items, type, length, rarity } = data;
+        setImmediate(() => handleCodeGeneration(req.body, socketid));
 
-//     console.log("socketid", socketid)
-//     console.log("expiration", expiration)
-//     console.log("codeamount", codeamount)
-//     console.log("items", items)
-//     console.log("type", type)
-//     console.log("length", length)
-//     console.log("rarity", rarity)
-//     console.log("STARTING CODE GENERATION")
-
-//     const session = await mongoose.startSession();
-//     session.startTransaction();
-
-//     console.log("SOCKET WILL SEND FIRST STATUS")
-
-//     if (socketid) {
-//         io.to(socketid).emit('generate-progress', { 
-//             percentage: 0,
-//             status: 'Starting code generation...'
-//         });
-//     }
-
-//     try{
-//         if (socketid) {
-//             io.to(socketid).emit('generate-progress', { 
-//                 percentage: 10,
-//                 status: 'Generating code patterns...'
-//             });
-//         }
-
-//         console.log("CODE LOGIC")
-
-//         const codes = [];
-//         const highestIndexCode = await Code.findOne().sort({ index: -1 }).session(session);
-//         const totalCodes = highestIndexCode ? highestIndexCode.index : 0;
-
-//         let lastCode = (totalCodes || 0) + 1;
-//         let currentCode = lastCode;
-
-//         console.log(`Last code index: ${lastCode}`);
-//         if (socketid) {
-//             io.to(socketid).emit('generate-progress', { 
-//             percentage: 40,
-//             status: `Preparing to save codes...`
-//             });
-//         }
-
-//         let codeData = [];
-
-//         let tempbatch = 1
-
-//         if (type === "robux") {
-//             for (let i = 0; i < codeamount; i++) {
-//             currentCode = getNextCode(lastCode + i, length || 9);
-//             codes.push(currentCode);
-
-//             if (i % Math.max(1, Math.floor(codeamount / 10)) === 0) {
-//                 const percentage = Math.round((i / codeamount) * 80) + 10;
-//                 if (socketid) {
-//                 io.to(socketid).emit('generate-progress', { 
-//                     percentage,
-//                     status: `Generating code patterns... ${i}/${codeamount}`
-//                 });
-//                 }
-//             }
-//             }
-            
-//             const temprobuxcodes = await RobuxCode.find({ status: "to-generate" }).session(session);
-//             if (!temprobuxcodes || temprobuxcodes.length === 0) {
-//             await session.abortTransaction();
-//             session.endSession();
-//                         if (socketid) {
-//                 io.to(socketid).emit('generate-progress', { 
-//                     percentage: 100,
-//                     status: 'failed',
-//                     success: false
-//                 });
-//             }
-//             return 
-//             }
-
-//             if (codeamount > temprobuxcodes.length) {
-//             await session.abortTransaction();
-//             session.endSession();
-//             if (socketid) {
-//                 io.to(socketid).emit('generate-progress', { 
-//                     percentage: 100,
-//                     status: 'failed',
-//                     success: false
-//                 });
-//             }
-//             return             
-//         }
-
-//             for (let i = 0; i < codeamount; i++) {
-//             const tempcode = temprobuxcodes[i];
-//             tempcode.status = "to-claim";
-//             await tempcode.save({ session });
-
-//             codeData.push({
-//                 expiration: expiration,
-//                 code: codes[i],
-//                 items: items,
-//                 robuxcode: tempcode._id,
-//                 type: "robux",
-//                 isUsed: false,
-//                 index: lastCode + i + 1,
-//                 length: length || 9,
-//                 rarity: rarity
-//             });
-//             }
-//         } else if (type === "ticket") {
-//             for (let i = 0; i < codeamount; i++) {
-//                     currentCode = getNextCode(lastCode + i, length || 9);
-//                     codes.push(currentCode);
-
-//                     if (i % Math.max(1, Math.floor(codeamount / 10)) === 0) {
-//                         const percentage = Math.round((i / codeamount) * 80) + 10;
-//                         if (socketid) {
-//                             io.to(socketid).emit('generate-progress', { 
-//                                 percentage,
-//                                 status: `Generating code patterns... ${i}/${codeamount}`
-//                             });
-//                         }
-//                     }
-//                 }
-
-//                 const availableTickets = await Ticket.find({ status: "to-generate" }).session(session);
-//                 if (!availableTickets || availableTickets.length === 0) {
-//                     await session.abortTransaction();
-//                     session.endSession();
-//                 if (socketid) {
-//                         io.to(socketid).emit('generate-progress', { 
-//                             percentage: 100,
-//                             status: 'failed',
-//                             success: false
-//                         });
-//                     }
-//                     return                 
-//                 }
-
-//                 if (codeamount > availableTickets.length) {
-//                     await session.abortTransaction();
-//                     session.endSession();
-//                 if (socketid) {
-//                         io.to(socketid).emit('generate-progress', { 
-//                             percentage: 100,
-//                             status: 'failed',
-//                             success: false
-//                         });
-//                     }
-//                     return                 
-//                 }
-
-//                 for (let i = 0; i < codeamount; i++) {
-//                     const ticketDoc = availableTickets[i];
-//                     ticketDoc.status = "to-claim";
-//                     await ticketDoc.save({ session });
-
-//                     codeData.push({
-//                         expiration: expiration,
-//                         code: codes[i],
-//                         items: items,
-//                         ticket: ticketDoc._id,
-//                         type: "ticket",
-//                         isUsed: false,
-//                         index: lastCode + i + 1,
-//                         length: length || 9,
-//                         rarity: rarity
-//                     });
-//                 }
-//         } else if (type === "ingame" || type === "exclusive" || type === "chest") {
-//             const BATCH_SIZE = 20000; // Reduced batch size
-//             let startIndex = (lastCode || 0);
-            
-//             for (let batchStart = 0; batchStart < codeamount; batchStart += BATCH_SIZE) {
-//                 // Start a new transaction for each batch
-//                 const batchSession = await mongoose.startSession();
-//                 batchSession.startTransaction();
-
-//                 try {
-//                     const batchEnd = Math.min(batchStart + BATCH_SIZE, codeamount);
-//                     const batchData = [];
-
-//                     if (socketid) {
-//                         const percentage = Math.round(((batchEnd) / codeamount) * 40) + 50;
-//                         io.to(socketid).emit('generate-progress', {
-//                             percentage,
-//                             status: `Generating code for batch ${tempbatch}. Progress: ${batchEnd.toLocaleString()}/${codeamount.toLocaleString()}`
-//                         });
-//                     }
-                    
-//                     for (let i = 0; i < (batchEnd - batchStart); i++) {
-//                         const currentIndex = startIndex + batchStart + i;
-//                         const currentCode = getNextCode(currentIndex, length || 9);
-//                         batchData.push({
-//                             expiration: expiration,
-//                             code: currentCode,
-//                             items: items,
-//                             type: type,
-//                             isUsed: false,
-//                             index: currentIndex,
-//                             length: length || 9,
-//                             rarity: rarity
-//                         });
-//                     }
-                    
-//                     await Code.insertMany(batchData, { session: batchSession, maxTimeMS: 60000 });
-//                     await Analytics.findOneAndUpdate(
-//                         {}, 
-//                         { $inc: { totaltoclaim: batchData.length } }, 
-//                         { session: batchSession, new: true }
-//                         );
-//                     await batchSession.commitTransaction();
-
-                    
-
-//                     if (socketid) {
-//                         const percentage = Math.round(((batchEnd) / codeamount) * 40) + 50;
-//                         io.to(socketid).emit('generate-progress', {
-//                             percentage,
-//                             status: `Saving In-Game codes for batch ${tempbatch}. Progress: ${batchEnd.toLocaleString()}/${codeamount.toLocaleString()}`
-//                         });
-//                     }
-//                     tempbatch++
-//                 } catch (err) {
-//                     await batchSession.abortTransaction();
-//                     throw err;
-//                 } finally {
-//                     batchSession.endSession();
-//                 }
-//             }
-
-//         } else {
-//             await session.abortTransaction();
-//             session.endSession();
-//             if (socketid) {
-//                 io.to(socketid).emit('generate-progress', { 
-//                     percentage: 100,
-//                     status: 'failed',
-//                     success: false
-//                 });
-//             }
-//             return 
-//         }
-
-//         if (socketid) {
-//             io.to(socketid).emit('generate-progress', { 
-//                 percentage: 90,
-//                 status: 'Saving codes to database...'
-//             });
-//         }
-
-//         if(type === 'robux' || type === 'ticket') {
-//         await Code.insertMany(codeData, { session });
-
-//         const update = { 
-//             $inc: { 
-//                 totaltoclaim: codeamount,
-//                 totaltogenerate: (type === 'robux' || type === 'ticket') ? -codeamount : 0
-//             }
-//         };  
-
-
-//         await Analytics.findOneAndUpdate({}, update, { session, new: true });
-//         }
-//         await session.commitTransaction();
-//         session.endSession();
-        
-//         if (socketid) {
-//             io.to(socketid).emit('generate-progress', { 
-//                 percentage: 100,
-//                 status: 'Complete',
-//                 success: true
-//             });
-//         }
-//     }
-//     catch(err){
-//         console.log(`Transaction error code: ${err}`);
-//     }
-// }
+        res.json({ message: "success" });
+    } catch (err) {
+        return res.status(400).json({ 
+            message: "bad-request", 
+            data: "There's a problem with the server! Please contact customer support for more details." 
+        });
+    }
+};
 
 exports.getcodes = async (req, res) => {
 
@@ -836,71 +356,9 @@ exports.getcodes = async (req, res) => {
         return result;
     });
 
-        
-    // const AnalyticsData = await Analytics.findOne({})
-    //     .then(data => data)
-    //     .catch(err => {
-    //         console.log(`There's a problem getting the analytics data. Error ${err}`);
-    //         return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
-    //     });
-
-
-    //     if (filter.archived === true) {
-    //         totalDocs = AnalyticsData.totalarchived || 0;
-    //     } else if (filter._id) {
-    //         const mfg = manufact.type || '';
-
-    //         if (filter.type && filter.rarity) {
-    //             // Example: totalhbyxrobuxrare
-    //             const key = `total${mfg}${filter.type}${filter.rarity}`;
-    //             totalDocs = AnalyticsData[key] || 0;
-
-    //         } else if (filter.type) {
-    //             // Sum all rarities for the given type
-    //             const rarities = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
-    //             totalDocs = rarities.reduce((sum, rarity) => {
-    //                 const key = `total${mfg}${filter.type}${rarity}`;
-    //                 return sum + (AnalyticsData[key] || 0);
-    //             }, 0);
-
-    //         } else {
-    //             // Total from this manufacturer across all types (no type filter)
-    //             const types = ['ingame', 'exclusive', 'chest', 'robux', 'ticket'];
-    //             totalDocs = types.reduce((sum, type) => {
-    //                 const key = `total${mfg}${type}`;
-    //                 return sum + (AnalyticsData[key] || 0);
-    //             }, 0);
-    //         }
-
-    //     } else if (filter.type) {
-    //         switch (filter.type) {
-    //             case 'ingame':
-    //             case 'exclusive':
-    //             case 'chest':
-    //             case 'robux':
-    //             case 'ticket': {
-    //                 const prefix = `total${filter.type}`;
-    //                 const rarities = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
-
-    //                 if (filter.rarity) {
-    //                     const key = `${prefix}${filter.rarity}`;
-    //                     totalDocs = AnalyticsData[key] || 0;
-    //                 } else {
-    //                     totalDocs = rarities.reduce((sum, rarity) => {
-    //                         const key = `${prefix}${rarity}`;
-    //                         return sum + (AnalyticsData[key] || 0);
-    //                     }, 0);
-    //                 }
-    //                 break;
-    //             }
-    //         }
-    //     } else {
-    //         totalDocs = AnalyticsData.totaltoclaim + AnalyticsData.totaltogenerate + AnalyticsData.totalclaimed + AnalyticsData.totalexpired + AnalyticsData.totalapproved || 0;
-    //     }
-
     const codeAnalytics = await CodeAnalytics.findOne({}).lean();
     let analyticsKey = buildAnalyticsKey({
-        manufacturer: filter.manufacturer, // or manufact?.name, depending on your mapping
+        manufacturer: filter.manufacturer, 
         type: filter.type,
         rarity: filter.rarity,
         status: filter.status
@@ -908,9 +366,11 @@ exports.getcodes = async (req, res) => {
     if (codeAnalytics && codeAnalytics.counts) {
         totalDocs = codeAnalytics.counts[analyticsKey] || 0;
     } else {
-        // fallback to DB count if analytics missing
         totalDocs = await Code.countDocuments(filter);
     }
+
+
+    totalDocs = result.length > 0 ? result[0].total : 0;
     const totalPages = Math.ceil(totalDocs / pageOptions.limit);
 
     const lastcodeid = codes[codes.length - 1]?.index || 0;
@@ -1003,33 +463,6 @@ exports.getcodescount = async (req, res) => {
         }
     })();
 }
-// check code
-
-// exports.checkcode = async (req, res) => {
-//     const { code } = req.body;
-
-//     if (!code) return res.status(400).json({ message: "bad-request", data: "Please provide a code!" });
-
-//     const codeExists = await Code.findOne({ code: code })
-//         .then(data => data)
-//         .catch(err => {
-//             console.log(`There's a problem checking the code. Error ${err}`);
-//             return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
-//         });
-
-//     if (!codeExists) return res.status(400).json({ message: "bad-request", data: "Code does not exist!" });
-//     if (codeExists.isUsed) return res.status(400).json({ message: "bad-request", data: "Code has already been redeemed!" });
-//     if (codeExists.expiration < new Date()) return res.status(400).json({ message: "bad-request", data: "Code has expired!" });
-//     if (codeExists.status === "claimed") return res.status(400).json({ message: "bad-request", data: "Code has already been redeemed!" });
-//     if (codeExists.status === "to-generate") return res.status(400).json({ message: "bad-request", data: "Code is not available!" });
-
-
-//     return res.json({
-//         message: "success",
-//         data: codeExists
-//     })
-// }
-
 
 exports.checkcode = async (req, res) => {
    const { id } = req.user
@@ -1100,42 +533,33 @@ exports.checkcode = async (req, res) => {
         codeExists.isUsed = true;
         codeExists.status = "claimed";
         
-        const manu = typeof getmanufacturerbyindex === 'function'
-            ? getmanufacturerbyindex(codeExists.index)?.type
-            : codeExists.manufacturer;
-
         const prevStatus = codeExists.status === "pre-claimed" ? "pre-claimed" : "to-claim";
-        const prevKey = buildAnalyticsKey({
-            manufacturer: manu,
+        // Get all keys for previous status (to decrement)
+        const prevKeys = buildMultipleAnalyticsKey({
+            manufacturer: codeExists.manufacturer,
             type: codeExists.type,
             rarity: codeExists.rarity,
-            status: prevStatus
+            status: prevStatus,
+            items: codeExists.items
         });
-        const newKey = buildAnalyticsKey({
-            manufacturer: manu,
-            type: codeExists.type,
-            rarity: codeExists.rarity,
-            status: "claimed"
-        });
+        prevKeys.push("T");
 
-        // Build all deeper keys for the new status
-        const keysToUpdate = [
-            prevKey,
-            newKey,
-            buildAnalyticsKey({ manufacturer: manu, type: codeExists.type, rarity: codeExists.rarity, status: "claimed" }),
-            buildAnalyticsKey({ manufacturer: manu, type: codeExists.type, status: "claimed" }),
-            buildAnalyticsKey({ manufacturer: manu, status: "claimed" }),
-            buildAnalyticsKey({ type: codeExists.type, rarity: codeExists.rarity, status: "claimed" }),
-            buildAnalyticsKey({ type: codeExists.type, status: "claimed" }),
-            buildAnalyticsKey({ status: "claimed" }),
-            "T"
-        ];
+        // Get all keys for new status (to increment)
+        const newKeys = buildMultipleAnalyticsKey({
+            manufacturer: codeExists.manufacturer,
+            type: codeExists.type,
+            rarity: codeExists.rarity,
+            status: "claimed",
+            items: codeExists.items
+        });
+        newKeys.push("T");
 
         const incObj = {};
-        keysToUpdate.forEach(key => {
-            if (key === prevKey) incObj[`counts.${key}`] = -1;
-            else if (key !== "T") incObj[`counts.${key}`] = 1;
-            else incObj['counts.T'] = 0; // Usually total doesn't change on claim, unless you want to track total claimed separately
+        prevKeys.forEach(key => {
+            incObj[`counts.${key}`] = -1;
+        });
+        newKeys.forEach(key => {
+            incObj[`counts.${key}`] = (incObj[`counts.${key}`] || 0) + 1;
         });
 
         await CodeAnalytics.findOneAndUpdate({}, { $inc: incObj }, { upsert: true });
@@ -1150,44 +574,35 @@ exports.checkcode = async (req, res) => {
         });
     } else if (codeExists.type === 'robux' || codeExists.type === 'ticket') {
         codeExists.status = "pre-claimed"  
-        
-        
-        const manu = typeof getmanufacturerbyindex === 'function'
-            ? getmanufacturerbyindex(codeExists.index)?.type
-            : codeExists.manufacturer;
 
         const prevStatus = codeExists.status === "pre-claimed" ? "pre-claimed" : "to-claim";
-        const prevKey = buildAnalyticsKey({
-            manufacturer: manu,
+
+        const prevKeys = buildMultipleAnalyticsKey({
+            manufacturer: codeExists.manufacturer,
             type: codeExists.type,
             rarity: codeExists.rarity,
-            status: prevStatus
-        });
-        const newKey = buildAnalyticsKey({
-            manufacturer: manu,
-            type: codeExists.type,
-            rarity: codeExists.rarity,
-            status: "pre-claimed"
+            status: prevStatus,
+            items: codeExists.items
         });
 
-        // Build all deeper keys for the new status
-        const keysToUpdate = [
-            prevKey,
-            newKey,
-            buildAnalyticsKey({ manufacturer: manu, type: codeExists.type, rarity: codeExists.rarity, status: "claimed" }),
-            buildAnalyticsKey({ manufacturer: manu, type: codeExists.type, status: "claimed" }),
-            buildAnalyticsKey({ manufacturer: manu, status: "claimed" }),
-            buildAnalyticsKey({ type: codeExists.type, rarity: codeExists.rarity, status: "claimed" }),
-            buildAnalyticsKey({ type: codeExists.type, status: "claimed" }),
-            buildAnalyticsKey({ status: "claimed" }),
-            "T"
-        ];
+        const newKeys = buildMultipleAnalyticsKey({
+            manufacturer: codeExists.manufacturer,
+            type: codeExists.type,
+            rarity: codeExists.rarity,
+            status: "claimed", // or your new status
+            items: codeExists.items
+        });
+
+        // Always include the global total key
+        prevKeys.push("T");
+        newKeys.push("T");
 
         const incObj = {};
-        keysToUpdate.forEach(key => {
-            if (key === prevKey) incObj[`counts.${key}`] = -1;
-            else if (key !== "T") incObj[`counts.${key}`] = 1;
-            else incObj['counts.T'] = 0; // Usually total doesn't change on claim, unless you want to track total claimed separately
+        prevKeys.forEach(key => {
+            incObj[`counts.${key}`] = -1;
+        });
+        newKeys.forEach(key => {
+            incObj[`counts.${key}`] = (incObj[`counts.${key}`] || 0) + 1;
         });
 
         await CodeAnalytics.findOneAndUpdate({}, { $inc: incObj }, { upsert: true });
@@ -1234,7 +649,6 @@ exports.checkcode = async (req, res) => {
     });
   }
 };
-
 
 exports.redeemcode = async (req, res) => {
 
@@ -1293,45 +707,39 @@ exports.redeemcode = async (req, res) => {
         codeExists.status = "claimed";
 
         await codeExists.save();
-        const manu = typeof getmanufacturerbyindex === 'function'
-            ? getmanufacturerbyindex(codeExists.index)?.type
-            : codeExists.manufacturer;
 
         const prevStatus = codeExists.status === "pre-claimed" ? "pre-claimed" : "to-claim";
-        const prevKey = buildAnalyticsKey({
-            manufacturer: manu,
+
+        const prevKeys = buildMultipleAnalyticsKey({
+            manufacturer: codeExists.manufacturer,
             type: codeExists.type,
             rarity: codeExists.rarity,
-            status: prevStatus
-        });
-        const newKey = buildAnalyticsKey({
-            manufacturer: manu,
-            type: codeExists.type,
-            rarity: codeExists.rarity,
-            status: "claimed"
+            status: prevStatus,
+            items: codeExists.items
         });
 
-        // Build all deeper keys for the new status
-        const keysToUpdate = [
-            prevKey,
-            newKey,
-            buildAnalyticsKey({ manufacturer: manu, type: codeExists.type, rarity: codeExists.rarity, status: "claimed" }),
-            buildAnalyticsKey({ manufacturer: manu, type: codeExists.type, status: "claimed" }),
-            buildAnalyticsKey({ manufacturer: manu, status: "claimed" }),
-            buildAnalyticsKey({ type: codeExists.type, rarity: codeExists.rarity, status: "claimed" }),
-            buildAnalyticsKey({ type: codeExists.type, status: "claimed" }),
-            buildAnalyticsKey({ status: "claimed" }),
-            "T"
-        ];
+        const newKeys = buildMultipleAnalyticsKey({
+            manufacturer: codeExists.manufacturer,
+            type: codeExists.type,
+            rarity: codeExists.rarity,
+            status: "claimed", // or your new status
+            items: codeExists.items
+        });
+
+        // Always include the global total key
+        prevKeys.push("T");
+        newKeys.push("T");
 
         const incObj = {};
-        keysToUpdate.forEach(key => {
-            if (key === prevKey) incObj[`counts.${key}`] = -1;
-            else if (key !== "T") incObj[`counts.${key}`] = 1;
-            else incObj['counts.T'] = 0; // Usually total doesn't change on claim, unless you want to track total claimed separately
+        prevKeys.forEach(key => {
+            incObj[`counts.${key}`] = -1;
+        });
+        newKeys.forEach(key => {
+            incObj[`counts.${key}`] = (incObj[`counts.${key}`] || 0) + 1;
         });
 
         await CodeAnalytics.findOneAndUpdate({}, { $inc: incObj }, { upsert: true });
+
         await RedeemedCodeAnalytics.create({
             code: codeExists._id,
         })
@@ -1366,42 +774,35 @@ exports.redeemcode = async (req, res) => {
         codeExists.status = "claimed";
 
         await codeExists.save();
-        const manu = typeof getmanufacturerbyindex === 'function'
-            ? getmanufacturerbyindex(codeExists.index)?.type
-            : codeExists.manufacturer;
 
         const prevStatus = codeExists.status === "pre-claimed" ? "pre-claimed" : "to-claim";
-        const prevKey = buildAnalyticsKey({
-            manufacturer: manu,
+     
+        const prevKeys = buildMultipleAnalyticsKey({
+            manufacturer: codeExists.manufacturer,
             type: codeExists.type,
             rarity: codeExists.rarity,
-            status: prevStatus
-        });
-        const newKey = buildAnalyticsKey({
-            manufacturer: manu,
-            type: codeExists.type,
-            rarity: codeExists.rarity,
-            status: "claimed"
+            status: prevStatus,
+            items: codeExists.items
         });
 
-        // Build all deeper keys for the new status
-        const keysToUpdate = [
-            prevKey,
-            newKey,
-            buildAnalyticsKey({ manufacturer: manu, type: codeExists.type, rarity: codeExists.rarity, status: "claimed" }),
-            buildAnalyticsKey({ manufacturer: manu, type: codeExists.type, status: "claimed" }),
-            buildAnalyticsKey({ manufacturer: manu, status: "claimed" }),
-            buildAnalyticsKey({ type: codeExists.type, rarity: codeExists.rarity, status: "claimed" }),
-            buildAnalyticsKey({ type: codeExists.type, status: "claimed" }),
-            buildAnalyticsKey({ status: "claimed" }),
-            "T"
-        ];
+        const newKeys = buildMultipleAnalyticsKey({
+            manufacturer: codeExists.manufacturer,
+            type: codeExists.type,
+            rarity: codeExists.rarity,
+            status: "claimed", // or your new status
+            items: codeExists.items
+        });
+
+        // Always include the global total key
+        prevKeys.push("T");
+        newKeys.push("T");
 
         const incObj = {};
-        keysToUpdate.forEach(key => {
-            if (key === prevKey) incObj[`counts.${key}`] = -1;
-            else if (key !== "T") incObj[`counts.${key}`] = 1;
-            else incObj['counts.T'] = 0; // Usually total doesn't change on claim, unless you want to track total claimed separately
+        prevKeys.forEach(key => {
+            incObj[`counts.${key}`] = -1;
+        });
+        newKeys.forEach(key => {
+            incObj[`counts.${key}`] = (incObj[`counts.${key}`] || 0) + 1;
         });
 
         await CodeAnalytics.findOneAndUpdate({}, { $inc: incObj }, { upsert: true });
@@ -1484,53 +885,35 @@ exports.approverejectcode = async (req, res) => {
                 });
         }
     }
-
-        const manu = typeof getmanufacturerbyindex === 'function'
-        ? getmanufacturerbyindex(codeExists.index)?.type
-        : codeExists.manufacturer;
-
-        const prevKey = buildAnalyticsKey({
-            manufacturer: manu,
-            type: codeExists.type,
-            rarity: codeExists.rarity,
-            status: "claimed"
+        const prevKeys = buildMultipleAnalyticsKey({
+            manufacturer: code.manufacturer,
+            type: code.type,
+            rarity: code.rarity,
+            status: "claimed",
+            items: code.items
         });
-        const newKey = buildAnalyticsKey({
-            manufacturer: manu,
-            type: codeExists.type,
-            rarity: codeExists.rarity,
-            status: "approved"
+
+        const newKeys = buildMultipleAnalyticsKey({
+            manufacturer: code.manufacturer,
+            type: code.type,
+            rarity: code.rarity,
+            status: status, // "approved" or "rejected"
+            items: code.items
         });
-        const keysToUpdate = [
-            prevKey,
-            newKey,
-            buildAnalyticsKey({ manufacturer: manu, type: code.type, rarity: code.rarity, status }),
-            buildAnalyticsKey({ manufacturer: manu, type: code.type, status }),
-            buildAnalyticsKey({ manufacturer: manu, status }),
-            buildAnalyticsKey({ type: code.type, rarity: code.rarity, status }),
-            buildAnalyticsKey({ type: code.type, status }),
-            buildAnalyticsKey({ status }),
-            "T"
-        ];
+
+        prevKeys.push("T");
+        newKeys.push("T");
+
         const incObj = {};
-        keysToUpdate.forEach(key => {
-            if (key === prevKey) incObj[`counts.${key}`] = -1;
-            else if (key === newKey) incObj[`counts.${key}`] = 1;
-            else if (key === "T") incObj[`counts.${key}`] = 0;
+
+        prevKeys.forEach(key => {
+            incObj[`counts.${key}`] = -1;
+        });
+        newKeys.forEach(key => {
+            incObj[`counts.${key}`] = (incObj[`counts.${key}`] || 0) + 1;
         });
 
         await CodeAnalytics.findOneAndUpdate({}, { $inc: incObj }, { upsert: true });
-
-
-    await Analytics.findOneAndUpdate({},
-        { $inc: { totalapproved: status === "approved" ? 1 : 0, totalclaimed: -1 } },
-        { new: true }
-    )
-    .then(data => data)
-    .catch(err => {
-        console.log(`There's a problem updating the analytics. Error ${err}`);
-        return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
-    });
 
     
     await code.save()
@@ -1602,7 +985,6 @@ exports.deletecode = async (req, res) => {
         });
     }
 }
-
 
 exports.exportCodesCSV = async (req, res) => {
     try {
@@ -1837,141 +1219,56 @@ exports.editmultiplecodes = async (req, res) => {
 // Helper: Update analytics on archive/unarchive
 async function updateAnalyticsOnArchive(code, direction = -1) {
     // direction: -1 for archive (decrement), 1 for unarchive (increment)
-    const analyticsUpdate = { $inc: {} };
-    
-    const analyticsData = await Analytics.findOne({});
-    // Update status counters
-    if (code.status === "claimed") analyticsUpdate.$inc.totalclaimed = direction;
-    if (code.status === "to-claim") analyticsUpdate.$inc.totaltoclaim = direction;
-    if (code.status === "approved") analyticsUpdate.$inc.totalapproved = direction;
-    if (code.status === "to-generate") analyticsUpdate.$inc.totaltogenerate = direction;
-    if (code.status === "rejected") analyticsUpdate.$inc.totalrejected = direction;
-    
-    // Update type-rarity specific counters
-    if (code.type && code.rarity) {
-        const typeRarityField = `total${code.type}${code.rarity}`;
-        analyticsUpdate.$inc[typeRarityField] = direction;
-        if (code.status === "claimed" || code.isUsed === true) {
-            analyticsUpdate.$inc[`totalclaimed${code.type}`] = direction;
-        } else {
-            analyticsUpdate.$inc[`totalunclaimed${code.type}`] = direction;
-        }
-
-    }
-
-
-    // Update archive counter with opposite direction
-    analyticsUpdate.$inc.totalarchived = -direction;
-
-    const result = await Analytics.findOneAndUpdate({}, analyticsUpdate, { new: true });
-    console.log(`Updated analytics for code ${code._id}:`, result);
-
     // --- Flat-keyed CodeAnalytics integration ---
-    // Use buildAnalyticsKey for previous state
-    if (code.type) {
-        const manu = code.manufacturer || (typeof getmanufacturerbyindex === 'function' ? getmanufacturerbyindex(code.index)?.type : undefined);
-        const key = buildAnalyticsKey({
-            manufacturer: manu,
-            type: code.type,
-            rarity: code.rarity,
-            status: code.status
-        });
-        if (key && key !== 'T') {
-            const incObj = {};
-            incObj[`counts.${key}`] = direction;
-            await CodeAnalytics.findOneAndUpdate({}, { $inc: incObj }, { upsert: true });
-        }
-    }
+    // Use buildMultipleAnalyticsKey for all keys of this code's current state
+    const keys = buildMultipleAnalyticsKey({
+        manufacturer: code.manufacturer,
+        type: code.type,
+        rarity: code.rarity,
+        status: code.status,
+        items: code.items
+    });
+    keys.push("T");
+
+    const incObj = {};
+    keys.forEach(key => {
+        incObj[`counts.${key}`] = direction;
+    });
+
+    await CodeAnalytics.findOneAndUpdate({}, { $inc: incObj }, { upsert: true });
 }
 
 async function updateAnalyticsOnEdit(original, updated) {
-    const analyticsUpdate = { $inc: {} };
-
-    // Status change
-    if (updated.status && updated.status !== original.status) {
-        // Handle original status decrements
-        if (original.status === "claimed") {
-            analyticsUpdate.$inc.totalclaimed = -1;
-            analyticsUpdate.$inc[`totalclaimed${original.type}`] = -1;
-        } else if (original.status === "to-claim") {
-            analyticsUpdate.$inc.totaltoclaim = -1;
-            analyticsUpdate.$inc[`totalunclaimed${original.type}`] = -1;
-        } else if (original.status === "approved") {
-            analyticsUpdate.$inc.totalapproved = -1;
-        } else if (original.status === "rejected") {
-            analyticsUpdate.$inc.totalrejected = -1;
-        } else if (original.status === "to-generate") {
-            analyticsUpdate.$inc.totaltogenerate = -1;
-        }
-
-        // Handle new status increments
-        if (updated.status === "claimed") {
-            analyticsUpdate.$inc.totalclaimed = 1;
-            analyticsUpdate.$inc[`totalclaimed${original.type}`] = 1;
-        } else if (updated.status === "to-claim") {
-            analyticsUpdate.$inc.totaltoclaim = 1;
-            analyticsUpdate.$inc[`totalunclaimed${original.type}`] = 1;
-        } else if (updated.status === "approved") {
-            analyticsUpdate.$inc.totalapproved = 1;
-        } else if (updated.status === "rejected") {
-            analyticsUpdate.$inc.totalrejected = 1;
-        } else if (updated.status === "to-generate") {
-            analyticsUpdate.$inc.totaltogenerate = 1;
-        }
-    }
-
-    // Type/rarity change
-    const oldType = original.type;
-    const oldRarity = original.rarity;
-    const newType = updated.type || original.type;
-    const newRarity = updated.rarity || original.rarity;
-
-    if (oldType && oldRarity && (oldType !== newType || oldRarity !== newRarity)) {
-        // Decrement old type/rarity combination
-        analyticsUpdate.$inc[`total${oldType}${oldRarity}`] = -1;
-        
-        // If status is claimed, update type-specific claimed counter
-        if (original.status === "claimed") {
-            analyticsUpdate.$inc[`totalclaimed${oldType}`] = -1;
-            analyticsUpdate.$inc[`totalclaimed${newType}`] = 1;
-        } else {
-            analyticsUpdate.$inc[`totalunclaimed${oldType}`] = -1;
-            analyticsUpdate.$inc[`totalunclaimed${newType}`] = 1;
-        }
-        
-        // Increment new type/rarity combination
-        analyticsUpdate.$inc[`total${newType}${newRarity}`] = 1;
-    }
-
-    // Only update if there are changes
-    if (Object.keys(analyticsUpdate.$inc).length > 0) {
-        ('Updating analytics:', analyticsUpdate);
-        await Analytics.findOneAndUpdate({}, analyticsUpdate, { new: true });
-    }
-
     // --- Flat-keyed CodeAnalytics integration ---
-    // Decrement previous key, increment new key if status/type/rarity changed
-    if ((updated.status && updated.status !== original.status) || (updated.type && updated.type !== original.type) || (updated.rarity && updated.rarity !== original.rarity)) {
-        const manu = original.manufacturer || (typeof getmanufacturerbyindex === 'function' ? getmanufacturerbyindex(original.index)?.type : undefined);
-        const prevKey = buildAnalyticsKey({
-            manufacturer: manu,
-            type: original.type,
-            rarity: original.rarity,
-            status: original.status
-        });
-        const newManu = updated.manufacturer || manu;
-        const newKey = buildAnalyticsKey({
-            manufacturer: newManu,
-            type: updated.type || original.type,
-            rarity: updated.rarity || original.rarity,
-            status: updated.status || original.status
-        });
-        const incObj = {};
-        if (prevKey && prevKey !== 'T') incObj[`counts.${prevKey}`] = -1;
-        if (newKey && newKey !== 'T') incObj[`counts.${newKey}`] = 1;
-        if (Object.keys(incObj).length > 0) {
-            await CodeAnalytics.findOneAndUpdate({}, { $inc: incObj }, { upsert: true });
-        }
+    // Decrement all keys for previous state, increment all keys for new state
+    const prevKeys = buildMultipleAnalyticsKey({
+        manufacturer: original.manufacturer,
+        type: original.type,
+        rarity: original.rarity,
+        status: original.status,
+        items: original.items
+    });
+    prevKeys.push("T");
+
+    const newKeys = buildMultipleAnalyticsKey({
+        manufacturer: updated.manufacturer || original.manufacturer,
+        type: updated.type || original.type,
+        rarity: updated.rarity || original.rarity,
+        status: updated.status || original.status,
+        items: updated.items || original.items
+    });
+    newKeys.push("T");
+
+    const incObj = {};
+    prevKeys.forEach(key => {
+        incObj[`counts.${key}`] = -1;
+    });
+    newKeys.forEach(key => {
+        incObj[`counts.${key}`] = (incObj[`counts.${key}`] || 0) + 1;
+    });
+
+    if (Object.keys(incObj).length > 0) {
+        await CodeAnalytics.findOneAndUpdate({}, { $inc: incObj }, { upsert: true });
     }
 }
 
@@ -1996,24 +1293,33 @@ exports.resetcode = async (req, res) => {
     if (code.status === "claimed" || code.status === "approved" || code.status === "rejected") {
         // Decrement previous state key
 
-        const manu = getmanufacturerbyindex(code.index)
-        const prevKey = buildAnalyticsKey({
-            manufacturer: manu.type || undefined,
+        const prevKeys = buildMultipleAnalyticsKey({
+            manufacturer: code.manufacturer,
             type: code.type,
             rarity: code.rarity,
-            status: code.status
+            status: code.status,
+            items: code.items
         });
 
-        const newKey = buildAnalyticsKey({
-            manufacturer: manu.type || undefined,
+        const newKeys = buildMultipleAnalyticsKey({
+            manufacturer: code.manufacturer,
             type: code.type,
             rarity: code.rarity,
-            status: "to-claim"
+            status: "to-claim", // Resetting to "to-claim" or "to-generate"
+            items: code.items
         });
-        const decObj = {};
-        if (prevKey && prevKey !== 'T') decObj[`counts.${prevKey}`] = -1;
-        if (newKey && newKey !== 'T') decObj[`counts.${newKey}`] = 1;
-        await CodeAnalytics.findOneAndUpdate({}, { $inc: decObj }, { upsert: true });
+        prevKeys.push("T");
+        newKeys.push("T");
+
+        const incObj = {};
+        prevKeys.forEach(key => {
+            incObj[`counts.${key}`] = -1;
+        });
+        newKeys.forEach(key => {
+            incObj[`counts.${key}`] = (incObj[`counts.${key}`] || 0) + 1;
+        });
+
+        await CodeAnalytics.findOneAndUpdate({}, { $inc: incObj }, { upsert: true });
     }
 
     code.isUsed = false;
@@ -2080,15 +1386,6 @@ exports.generateitemsoncode = async (req, res, next) => {
     let batchNum = 1;
     let totalUpdated = 0;
 
-    function buildAnalyticsKey({ manufacturer, type, rarity, status }) {
-        let key = '';
-        if (manufacturer) key += `M:${manufacturer}`;
-        if (type) key += (key ? '|' : '') + `TY:${type}`;
-        if (rarity) key += (key ? '|' : '') + `R:${rarity}`;
-        if (status) key += (key ? '|' : '') + `S:${status}`;
-        return key || 'T';
-    }
-
     try {
         let itemDocs = Array.isArray(itemid)
             ? await Item.find({ _id: { $in: itemid } })
@@ -2113,12 +1410,9 @@ exports.generateitemsoncode = async (req, res, next) => {
             const remaining = codesamount - processed;
             const currentBatchSize = Math.min(batchSize, remaining);
 
-            console.log(`Processing batch ${batchNum} with size ${currentBatchSize}...`);
-            console.log(`Querying for codes with IDs ${idQuery._id.$gt || ''} to ${idQuery._id.$lte || ''}...`);
-
             io.to(socketid).emit('generate-items-progress', {
                 percentage: Math.round((processed / codesamount) * 100),
-                status: `Processing batch ${batchNum} (${processed}/${codesamount})...`
+                status: `Processing batch ${batchNum} (${processed}/${codesamount}).`
             });
 
             const codesBatch = await Code.find({ 
@@ -2133,8 +1427,6 @@ exports.generateitemsoncode = async (req, res, next) => {
                 break;
             }
 
-            console.log(`Found ${codesBatch.length} codes for batch ${batchNum}.`);
-
             for (const code of codesBatch) {
                 if (code.type === "chest") {
                     const decObj = {};
@@ -2146,7 +1438,10 @@ exports.generateitemsoncode = async (req, res, next) => {
                     await CodeAnalytics.findOneAndUpdate({}, { $inc: decObj }, { upsert: true });
                 }
             }
-
+            io.to(socketid).emit('generate-items-progress', {
+                percentage: Math.round((processed / codesamount) * 100),
+                status: `Processing batch ${batchNum} (${processed}/${codesamount})..`
+            });
             await Code.updateMany(
                 { _id: { $in: codesBatch.map(code => code._id) } },
                 {
@@ -2164,7 +1459,7 @@ exports.generateitemsoncode = async (req, res, next) => {
 
             io.to(socketid).emit('generate-items-progress', {
                 percentage: Math.round((processed / codesamount) * 100),
-                status: `Processing batch ${batchNum} (${processed}/${codesamount})`,
+                status: `Processing batch ${batchNum} (${processed}/${codesamount})...`,
                 processed,
                 total: codesamount,
                 success: true
@@ -2174,36 +1469,24 @@ exports.generateitemsoncode = async (req, res, next) => {
             batchNum++;
         }
 
-        // 🔁 Perform CodeAnalytics update once at the end
         if (totalUpdated > 0) {
-            const analyticsKey = buildAnalyticsKey({
+            const keysToUpdate = buildMultipleAnalyticsKey({
                 manufacturer: manufact.type,
-                type: type,
-                rarity: rarity,
-                status: "to-claim"
+                type,
+                rarity,
+                status: "to-claim",
+                items: itemIds
             });
+            keysToUpdate.push("T");
 
-            const analyticsKeyType = buildAnalyticsKey({ manufacturer: manufact.type, type: type });
-            const analyticsKeyTypeRarity = buildAnalyticsKey({ manufacturer: manufact.type, type: type, rarity: rarity });
-            const analyticsKeyTypeOnly = buildAnalyticsKey({ type: type });
-            const analyticsKeyTypeOnlyRarity = buildAnalyticsKey({ type: type, rarity: rarity });
-            const analyticsKeyTypeOnlyRarityStatus = buildAnalyticsKey({ type: type, rarity: rarity, status: "to-claim" });
-
-            const incObj = {
-                [`counts.${analyticsKey}`]: totalUpdated,
-                [`counts.${analyticsKeyType}`]: totalUpdated,
-                [`counts.${analyticsKeyTypeRarity}`]: totalUpdated,
-                [`counts.${analyticsKeyTypeOnly}`]: totalUpdated,
-                [`counts.${analyticsKeyTypeOnlyRarity}`]: totalUpdated,
-                [`counts.${analyticsKeyTypeOnlyRarityStatus}`]: totalUpdated,
-                [`counts.TY:${type}`]: totalUpdated,
-                [`counts.M:${manufact.type}`]: totalUpdated
-            };
+            const incObj = {};
+            keysToUpdate.forEach(key => {
+                incObj[`counts.${key}`] = totalUpdated;
+            });
 
             console.log(`Final analytics update with ${totalUpdated} items...`);
             await CodeAnalytics.findOneAndUpdate({}, { $inc: incObj }, { upsert: true });
         }
-
         io.to(socketid).emit('generate-items-progress', {
             percentage: 100,
             status: 'Complete',
@@ -2225,4 +1508,99 @@ exports.generateitemsoncode = async (req, res, next) => {
     }
 })();
 
+};
+
+
+async function getTotalCodesForManufacturer(filter) {
+  const total = await Code.countDocuments(filter);
+  return total;
+}
+
+async function getItemsAnalytics(filter) {
+  const items = await Item.find({});
+  const analytics = await Promise.all(
+    items.map(async (item) => {
+      const itemId = new mongoose.Types.ObjectId(item._id);
+      const itemFilter = {
+        ...filter,
+        items: { $in: [itemId] },
+      };
+
+      const result = await Code.aggregate([
+        { $match: itemFilter },
+        {
+          $group: {
+            _id: null,
+            total: { $sum: 1 },
+            claimed: {
+              $sum: { $cond: [{ $eq: ['$status', 'claimed'] }, 1, 0] },
+            },
+            unclaimed: {
+              $sum: { $cond: [{ $eq: ['$status', 'to-claim'] }, 1, 0] },
+            },
+            approved: {
+              $sum: { $cond: [{ $eq: ['$status', 'approved'] }, 1, 0] },
+            },
+            rejected: {
+              $sum: { $cond: [{ $eq: ['$status', 'rejected'] }, 1, 0] },
+            },
+          },
+        },
+      ]);
+
+      const stats = result[0] || {
+        total: 0,
+        claimed: 0,
+        unclaimed: 0,
+        approved: 0,
+        rejected: 0,
+      };
+
+      return {
+        itemname: item.itemname,
+        itemtype: item.category,
+        itemrarity: item.rarity,
+        totalcodes: stats.total,
+        claimed: stats.claimed,
+        unclaimed: stats.unclaimed,
+        approved: stats.approved,
+        rejected: stats.rejected,
+      };
+    })
+  );
+
+  return analytics;
+}
+
+
+exports.getCodeAnalyticsCountOverall = async (req, res) => {
+  const { manufacturer } = req.query;
+
+  try {
+    console.time('analytics-parallel');
+
+    const filter = manufacturer ? getManufacturerFilter(manufacturer) : {};
+
+    // Run both analytics in parallel
+    const [totalcodes, itemsanalytics] = await Promise.all([
+      getTotalCodesForManufacturer(filter),
+      getItemsAnalytics(filter),
+      
+    ]);
+
+    console.timeEnd(analytics-parallel);
+
+    return res.json({
+      message: 'success',
+      manufacturer: manufacturer || '',
+      totalcodes,
+      itemsanalytics,
+    });
+  } catch (err) {
+    console.error('Error in getCodeAnalyticsCountOverall:', err);
+    return res.status(500).json({
+      message: 'error',
+      error: 'Failed to generate analytics data.',
+    });
+  }
 };
