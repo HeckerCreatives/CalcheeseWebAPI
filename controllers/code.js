@@ -1760,10 +1760,11 @@ exports.getCodeAnalyticsCountOverall = async (req, res) => {
 
    } catch (err) {
      console.error('Error in getCodeAnalyticsCountOverall:', err);
-     return res.status(500).json({
-       message: 'error',
-       error: 'Failed to generate analytics data.',
-     });
+        io.to(socketid).emit('code-analytics-progress', {
+        percentage: 100,
+        status: 'failed',
+        message: 'There was an error generating the analytics data. Please try again later.',
+        });
    }
  })()
 };
