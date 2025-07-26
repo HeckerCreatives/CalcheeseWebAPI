@@ -1727,32 +1727,43 @@ async function getItemsAnalytics(filter) {
 
 // 🔹 Main handler function
 exports.getCodeAnalyticsCountOverall = async (req, res) => {
-  const { manufacturer } = req.query;
+  const { manufacturer, socketid } = req.query;
 
-  try {
-    console.time('analytics-parallel');
-
-    const filter = manufacturer ? getManufacturerFilter(manufacturer) : {};
-
-    // Run both analytics in parallel
-    const [totalcodes, itemsanalytics] = await Promise.all([
-      getTotalCodesForManufacturer(filter),
-      getItemsAnalytics(filter),
-    ]);
-
-    console.timeEnd('analytics-parallel');
-
-    return res.json({
-      message: 'success',
-      manufacturer: manufacturer || '',
-      totalcodes,
-      itemsanalytics,
+  const filter = manufacturer ? getManufacturerFilter(manufacturer) : {};
+  
+     res.json({
+        message: "success",
+        status: "analytics-started",
     });
-  } catch (err) {
-    console.error('Error in getCodeAnalyticsCountOverall:', err);
-    return res.status(500).json({
-      message: 'error',
-      error: 'Failed to generate analytics data.',
-    });
-  }
+  (async () => {
+      try {
+        io.to(socketid).emit('code-analytics-progress', {
+            percentage: 0,
+            status: 'starting',
+            manufacturer: manufacturer || '',
+            message: 'Generating analytics data...'
+        });
+     const [totalcodes, itemsanalytics] = await Promise.all([
+       getTotalCodesForManufacturer(filter),
+       getItemsAnalytics(filter),
+     ]);
+ 
+
+    io.to(socketid).emit('code-analytics-progress', {
+       percentage: 100,
+       status: 'complete',
+       manufacturer: manufacturer || '',
+       totalcodes,
+       itemsanalytics,
+       message: 'Analytics data generated successfully.',
+     });
+
+   } catch (err) {
+     console.error('Error in getCodeAnalyticsCountOverall:', err);
+     return res.status(500).json({
+       message: 'error',
+       error: 'Failed to generate analytics data.',
+     });
+   }
+ })()
 };
