@@ -739,14 +739,8 @@ exports.getcodes = async (req, res) => {
             { code: searchRegex },
         ];
     }
-
-    
-    const manufact = getmanufacturerbyname(manufacturer);
-    
-    if (manufact !== null) {
-        let gtindex = manufact.gt ? manufact.gt : null;
-        let index = manufact.lte ? manufact.lte : 0;
-        filter._id = { $lte: index, ...(gtindex && { $gt: gtindex }) };
+    if (manufacturer) {
+        filter.manufacturer = manufacturer;
     }
     
     let lastidindex = page * pageOptions.limit;
@@ -799,7 +793,7 @@ exports.getcodes = async (req, res) => {
             code: code.code,
             status: code.status,
             index: code.index,
-            manufacturer: getmanufacturerbyindex(code.index).name,
+            manufacturer: code.manufacturer,
             items: code.items.map(item => ({
                 id: item._id,
                 itemid: item.itemid,
@@ -906,7 +900,7 @@ exports.getcodes = async (req, res) => {
 
     const codeAnalytics = await CodeAnalytics.findOne({}).lean();
     let analyticsKey = buildAnalyticsKey({
-        manufacturer: manufact?.type, // or manufact?.name, depending on your mapping
+        manufacturer: filter.manufacturer, // or manufact?.name, depending on your mapping
         type: filter.type,
         rarity: filter.rarity,
         status: filter.status
@@ -966,11 +960,8 @@ exports.getcodescount = async (req, res) => {
             filter.$or = [{ code: searchRegex }];
         }
 
-        const manufact = getmanufacturerbyname(manufacturer);
-        if (manufact !== null) {
-            let gtindex = manufact.gt ? manufact.gt : null;
-            let index = manufact.lte ? manufact.lte : 0;
-            filter._id = { $lte: index, ...(gtindex && { $gt: gtindex }) };
+        if (manufacturer) {
+            filter.manufacturer = manufacturer;
         }
 
         let lastidindex = page * pageOptions.limit;
@@ -979,9 +970,16 @@ exports.getcodescount = async (req, res) => {
         }
 
         try {
+
+            if (socketid) {
+                io.to(socketid).emit('generate-progress', {
+                    percentage: 0,
+                    status: 'In Progress',
+                    success: false
+                });
+            }
             const totalCodes = await Code.countDocuments(filter);
             const totalPages = Math.ceil(totalCodes / pageOptions.limit);
-
             if (socketid) {
                 io.to(socketid).emit('generate-progress', {
                     percentage: 100,
@@ -991,6 +989,7 @@ exports.getcodescount = async (req, res) => {
                     totalcodes: totalCodes
                 });
             }
+
         } catch (err) {
             console.log(`There's a problem getting the codes count. Error ${err}`);
             if (socketid) {

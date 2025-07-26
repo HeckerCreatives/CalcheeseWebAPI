@@ -11,15 +11,9 @@ const CodeSchema = new mongoose.Schema(
             ref: 'Item',
             index: true // Automatically creates an index on 'amount'
         }],
-        robuxcode: {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: 'RobuxCode',
-            index: true // Automatically creates an index
-        },
-        ticket: {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: 'Ticket',
-            index: true // Automatically creates an index
+        manufacturer: {
+            type: String,
+            index: true // Automatically creates an index on 'amount'
         },
         type: {
             type: String,
@@ -44,15 +38,12 @@ const CodeSchema = new mongoose.Schema(
         },
         guardian: {
             type: String,
-            index: true // Automatically creates an index on 'amount'
         },
         name: {
             type: String,
-            index: true // Automatically creates an index on 'amount'
         },
         email: {
             type: String,
-            index: true // Automatically creates an index on 'amount'
         },
         address: {
             type: String,
@@ -60,11 +51,9 @@ const CodeSchema = new mongoose.Schema(
         },
         contact: {
             type: String,
-            index: true // Automatically creates an index on 'amount'
         },
         picture: {
             type: String,
-            index: true // Automatically creates an index on 'amount'
         },
         index: {
             type: Number,
@@ -72,7 +61,6 @@ const CodeSchema = new mongoose.Schema(
         },
         length: {
             type: Number,
-            index: true // Automatically creates an index on 'amount'
         },
         rarity: {
             type: String,
@@ -103,6 +91,21 @@ CodeSchema.pre('save', async function(next) {
 });
 
 CodeSchema.index({ type: 1, isUsed: 1 });
+CodeSchema.index({ type: 1, rarity: 1 });
+CodeSchema.index({ type: 1, status: 1 });
+CodeSchema.index({ manufacturer: 1, type: 1})
+CodeSchema.index({ manufacturer: 1, rarity: 1})
+CodeSchema.index({ manufacturer: 1, status: 1})
+CodeSchema.index({ rarity: 1, status: 1});
+
+CodeSchema.index({ type: 1, manufacturer: 1, status: 1 });
+CodeSchema.index({ type: 1, manufacturer: 1, rarity: 1 });
+CodeSchema.index({ manufacturer: 1, rarity: 1, items: 1 });
+CodeSchema.index({ manufacturer: 1, rarity: 1, status: 1 });
+CodeSchema.index({ type: 1, rarity: 1, status: 1 });
+CodeSchema.index({ type: 1, rarity: 1, items: 1 });
+CodeSchema.index({ type: 1, rarity: 1, items: 1, status: 1 });
+CodeSchema.index({ manufacturer: 1, type: 1, rarity: 1, items: 1, status: 1 });
 
 const Code = mongoose.model("Code", CodeSchema)
 
