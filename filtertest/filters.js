@@ -1,4 +1,5 @@
 const Code = require("../models/Code");
+const { default: mongoose } = require("mongoose");
 
 exports.getcodeswithfilter = async (req, res) => {
     const {manufacturer, rewardtype, rarity, items, status} = req.query;
@@ -7,6 +8,7 @@ exports.getcodeswithfilter = async (req, res) => {
         manufacturer: 'hbyx',
         type: 'ingame',
         rarity: 'common',
+        items: new mongoose.Types.ObjectId("6867da36fd0f989575d2fddf"),
         status: 'to-claim'
     };
 
