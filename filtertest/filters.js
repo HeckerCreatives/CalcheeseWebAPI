@@ -11,9 +11,8 @@ exports.getcodeswithfilter = async (req, res) => {
 
     const filters = {
         manufacturer: 'hbyx2',
-        type: 'ingame',
+        type: 'chest',
         rarity: 'common',
-        items: new mongoose.Types.ObjectId("6867da36fd0f989575d2fddf"),
         status: 'to-claim'
     };
 
