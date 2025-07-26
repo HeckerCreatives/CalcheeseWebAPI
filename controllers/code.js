@@ -15,7 +15,6 @@ const crypto = require('crypto');
 const Inventory = require("../models/Inventory");
 const Player = require("../models/Player");
 const { checkmaintenance } = require("../utils/maintenancetools");
-const { getmanufacturerbyname, getmanufacturerbyindex } = require("../utils/manufacturerutil");
 const { syncAllAnalytics } = require("./dashboard");
 const { syncAllAnalyticsUtility } = require("../utils/analytics");
 const CodeAnalytics = require("../models/CodeAnalytics");
@@ -128,7 +127,7 @@ async function generateBatchUniqueCodes(desiredCount) {
 }
 
 async function handleCodeGeneration(data) {
-    const { socketid, expiration, codeamount, items, type, length = CODE_LENGTH, rarity } = data;
+    const { socketid, expiration, codeamount, items, type, length = CODE_LENGTH, rarity , manufacturer} = data;
 
     try {
         io.emit('generate-progress', { percentage: 10, status: 'Generating code patterns...' });
@@ -164,7 +163,7 @@ async function handleCodeGeneration(data) {
             await saveWithFallback(batchData);
 
             const keysToUpdate = buildMultipleAnalyticsKey({
-                manufacturer: manufact.type,
+                manufacturer: manufacturer,
                 type,
                 rarity,
                 status: "to-claim",
@@ -195,7 +194,7 @@ async function handleCodeGeneration(data) {
 
 
 exports.newgeneratecode = async (req, res) => {
-    const { socketid, expiration, codeamount, items, type, length, rarity } = req.body;
+    const { socketid, expiration, codeamount, items, type, length, rarity, manufacturer } = req.body;
 
     if (!expiration || !codeamount || !items) {
         return res.status(400).json({ message: "failed", data: "Please fill in all the required fields!" });
@@ -369,8 +368,6 @@ exports.getcodes = async (req, res) => {
         totalDocs = await Code.countDocuments(filter);
     }
 
-
-    totalDocs = result.length > 0 ? result[0].total : 0;
     const totalPages = Math.ceil(totalDocs / pageOptions.limit);
 
     const lastcodeid = codes[codes.length - 1]?.index || 0;
@@ -1357,12 +1354,6 @@ exports.generateitemsoncode = async (req, res, next) => {
         return res.status(400).json({ message: "bad-request", data: "Please provide all required fields!" });
     }
 
-    const manufact = await getmanufacturerbyname(manufacturer);
-
-    if (!manufact) {
-        return res.status(400).json({ message: "bad-request", data: "Invalid manufacturer type!" });
-    }
-
     if (!['robux', 'ticket', 'ingame', 'exclusive', 'chest'].includes(type.toLowerCase())) {
         return res.status(400).json({ message: "bad-request", data: "Invalid type! Must be one of: robux, ticket, ingame, exclusive and chest." });
     }
@@ -1402,9 +1393,6 @@ exports.generateitemsoncode = async (req, res, next) => {
         }
 
         const itemIds = itemDocs.map(item => item._id);
-        const gtId = manufact.gt;
-        const lteId = manufact.lte;
-        const idQuery = gtId ? { _id: { $gt: gtId, $lte: lteId } } : { _id: { $lte: lteId } };
 
         while (processed < codesamount) {
             const remaining = codesamount - processed;
@@ -1416,7 +1404,7 @@ exports.generateitemsoncode = async (req, res, next) => {
             });
 
             const codesBatch = await Code.find({ 
-                ...idQuery, 
+                manufacturer: manufacturer,
                 items: { $size: 0 } 
             })
             .select('_id index type rarity status')
@@ -1430,11 +1418,11 @@ exports.generateitemsoncode = async (req, res, next) => {
             for (const code of codesBatch) {
                 if (code.type === "chest") {
                     const decObj = {};
-                    const keyManuType = buildAnalyticsKey({ manufacturer: manufact.type, type: "chest" });
+                    const keyManuType = buildAnalyticsKey({ manufacturer: manufacturer, type: "chest" });
                     const keyTypeOnly = buildAnalyticsKey({ type: "chest" });
                     decObj[`counts.${keyManuType}`] = -1;
                     decObj[`counts.${keyTypeOnly}`] = -1;
-                    decObj[`counts.M:${manufact.type}`] = -1;
+                    decObj[`counts.M:${manufacturer}`] = -1;
                     await CodeAnalytics.findOneAndUpdate({}, { $inc: decObj }, { upsert: true });
                 }
             }
@@ -1471,7 +1459,7 @@ exports.generateitemsoncode = async (req, res, next) => {
 
         if (totalUpdated > 0) {
             const keysToUpdate = buildMultipleAnalyticsKey({
-                manufacturer: manufact.type,
+                manufacturer: manufacturer,
                 type,
                 rarity,
                 status: "to-claim",
@@ -1579,16 +1567,14 @@ exports.getCodeAnalyticsCountOverall = async (req, res) => {
   try {
     console.time('analytics-parallel');
 
-    const filter = manufacturer ? getManufacturerFilter(manufacturer) : {};
-
     // Run both analytics in parallel
     const [totalcodes, itemsanalytics] = await Promise.all([
-      getTotalCodesForManufacturer(filter),
-      getItemsAnalytics(filter),
+      getTotalCodesForManufacturer(),
+      getItemsAnalytics(),
       
     ]);
 
-    console.timeEnd(analytics-parallel);
+    console.timeEnd('analytics-parallel');
 
     return res.json({
       message: 'success',

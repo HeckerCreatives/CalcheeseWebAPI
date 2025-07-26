@@ -548,8 +548,7 @@ function buildKeys(code) {
     const keys = [];
     // Shortenings for legend
 
-    const manu = getmanufacturerbyindex(code.index);
-    const M = manu ? manu.type : null;
+    const M = code.manufacturer
     const TY = code.type;
     const R = code.rarity;
     const S = code.status;
@@ -580,12 +579,16 @@ function buildKeys(code) {
 
 exports.syncAllCodeAnalyticsUtility = async () => {
     console.log("Starting full code analytics sync...");
-    const batchSize = 10000;
+    const batchSize = 100000;
     let lastId = null;
     let hasMore = true;
     let batchnumber = 0;
     const counts = {};
 
+    let processedCount = 0;
+    const totalDocs = await Code.estimatedDocumentCount(); // Your known total
+
+    console.log(`Starting sync with total documents: ${totalDocs}`);
     while (hasMore) {
         const codes = await Code.find(
             lastId ? { _id: { $gt: lastId } } : {},
@@ -602,11 +605,11 @@ exports.syncAllCodeAnalyticsUtility = async () => {
             keys.forEach(key => incrementFlat(counts, key));
         });
 
+        processedCount += codes.length;
         lastId = codes[codes.length - 1]._id;
-        hasMore = codes.length === batchSize;
+        hasMore = codes.length === batchSize && processedCount < totalDocs;
         batchnumber++;
-        console.log(`Batch ${batchnumber} processed, last ID: ${lastId.toString()}`);
-        // console.log ever 100 batches
+        console.log(`Batch ${batchnumber} processed, last ID: ${lastId.toString()}, processed: ${processedCount}`);
         if (batchnumber % 100 === 0) {
             console.log(counts);
         }
