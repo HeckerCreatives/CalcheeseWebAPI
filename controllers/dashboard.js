@@ -6,44 +6,52 @@ const { daily, weekly, monthly } = require("../utils/graphfilter");
 const { startOfYear, endOfYear, startOfWeek, endOfWeek } = require('date-fns');
 
 
-
 exports.getcardanalytics = async (req, res) => {
-    let totalAnalytics = await Analytics.findOne()
-        .then(data => data)
-        .catch(err => {
-            console.log(`There's a problem getting the analytics data. Error ${err}`)
-            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." })
-        })
+    try {
+        // Define the keys you want to fetch
+        const keys = [
+            "T",
+            "S:to-generate",
+            "S:to-claim",
+            "S:claimed",
+            "S:expired",
+            "S:approved"
+        ];
 
+        // Fetch all analytics docs for these keys
+        const analyticsDocs = await Analytics.find({ name: { $in: keys } }).lean();
+
+        // Map keys to amounts, default to 0 if not found
+        const analyticsMap = {};
+        keys.forEach(key => {
+            const doc = analyticsDocs.find(a => a.name === key);
+            analyticsMap[key] = doc ? doc.amount : 0;
+        });
+
+        // Get expired codes count (live)
         const expiredCodesCount = await Code.countDocuments({
             expiration: { $lt: new Date() },
             isUsed: false,
             status: { $nin: ["approved", "claimed"] }
-        })        
-            .then(data => data)
-            .catch(err => {
-                console.log(`There's a problem getting the expired codes count. Error ${err}`);
-                return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
-            });
-    
-    
-            if (expiredCodesCount > 0) {
-                if (totalAnalytics.totalexpired !== expiredCodesCount) {
-                    const diff = expiredCodesCount - (totalAnalytics.totalexpired || 0);
-                    totalAnalytics.totalexpired = expiredCodesCount;
-                    totalAnalytics.totaltoclaim -= diff;
-                }
-            }
+        });
 
-    const finaldata = {
-        totalcodes: totalAnalytics.totaltogenerate + totalAnalytics.totaltoclaim + totalAnalytics.totalclaimed + totalAnalytics.totalexpired + totalAnalytics.totalapproved,  
-        totalusedcodes: totalAnalytics.totalclaimed,
-        totalunusedcodes: totalAnalytics.totaltoclaim,
-        totalexpiredcodes: totalAnalytics.totalexpired,
-        totalapproved: totalAnalytics.totalapproved,
+        // Use the greater of analytics or live count for expired
+        analyticsMap["S:expired"] = Math.max(analyticsMap["S:expired"], expiredCodesCount);
+
+        const finaldata = {
+            totalcodes: analyticsMap["T"],
+            totalusedcodes: analyticsMap["S:claimed"],
+            totalunusedcodes: analyticsMap["S:to-claim"],
+            totalexpiredcodes: analyticsMap["S:expired"],
+            totalapproved: analyticsMap["S:approved"],
+            totaltogenerate: analyticsMap["S:to-generate"]
+        };
+
+        return res.json({ message: "success", data: finaldata });
+    } catch (err) {
+        console.log(`There's a problem getting the analytics data. Error ${err}`);
+        return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
     }
-
-    return res.json({ message: "success", data: finaldata })
 }
 
 exports.redeemCodeAnalytics = async (req, res) => {
