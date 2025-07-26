@@ -360,7 +360,8 @@ exports.getcodes = async (req, res) => {
         manufacturer: filter.manufacturer, 
         type: filter.type,
         rarity: filter.rarity,
-        status: filter.status
+        status: filter.status,
+        items: filter.items
     });
     if (codeAnalytics && codeAnalytics.counts) {
         totalDocs = codeAnalytics.counts[analyticsKey] || 0;
