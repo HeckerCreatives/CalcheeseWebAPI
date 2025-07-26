@@ -30,7 +30,7 @@ function buildAnalyticsKey({ manufacturer, type, rarity, status, items }) {
     if (type) keys.push(`TY:${type}`);
     if (rarity) keys.push(`R:${rarity}`);
     if (status) keys.push(`S:${status}`);
-    if (items) keys.push(`I:${items.join(',')}`);
+    if (items) keys.push(`I:${items}`);
     return keys.length > 0 ? keys.join('|') : 'T'; // 'T' for total if no filter
 }
 
