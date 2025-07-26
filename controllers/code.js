@@ -18,6 +18,7 @@ const { checkmaintenance } = require("../utils/maintenancetools");
 const { syncAllAnalytics } = require("./dashboard");
 const { syncAllAnalyticsUtility } = require("../utils/analytics");
 const CodeAnalytics = require("../models/CodeAnalytics");
+const { getmanufacturerbyname } = require("../utils/manufacturerutil");
 
 const CHARSET = 'ACDEFHJKLMNPRTUVXWY379';
 const CODE_LENGTH = 9;
@@ -176,6 +177,13 @@ async function handleCodeGeneration(data) {
                 incObj[`counts.${key}`] = codesBatch.length;
             });
 
+            for (const key of keysToUpdate) {
+                await Analytics.findOneAndUpdate(
+                    { name: key },
+                    { $inc: { amount: codesBatch.length } },
+                    { upsert: true }
+                );
+            }
             await CodeAnalytics.findOneAndUpdate(
                 {},
                 { $inc: incObj },
@@ -355,16 +363,18 @@ exports.getcodes = async (req, res) => {
         return result;
     });
 
-    const codeAnalytics = await CodeAnalytics.findOne({}).lean();
     let analyticsKey = buildAnalyticsKey({
         manufacturer: filter.manufacturer, 
         type: filter.type,
         rarity: filter.rarity,
         status: filter.status,
-        items: filter.items
+        // first item in items array if exists
+        items: item
     });
-    if (codeAnalytics && codeAnalytics.counts) {
-        totalDocs = codeAnalytics.counts[analyticsKey] || 0;
+
+    const analyticsDoc = await Analytics.findOne({ name: analyticsKey }).lean();
+    if (analyticsDoc) {
+        totalDocs = analyticsDoc.amount || 0;
     } else {
         totalDocs = await Code.countDocuments(filter);
     }
@@ -560,6 +570,21 @@ exports.checkcode = async (req, res) => {
             incObj[`counts.${key}`] = (incObj[`counts.${key}`] || 0) + 1;
         });
 
+        for (const key of prevKeys) {
+            await Analytics.findOneAndUpdate(
+                { name: key },
+                { $inc: { amount: -1 } },
+                { upsert: true }
+            );
+        }
+        for (const key of newKeys) {
+            await Analytics.findOneAndUpdate(
+                { name: key },
+                { $inc: { amount: 1 } },
+                { upsert: true }
+            );
+        }
+
         await CodeAnalytics.findOneAndUpdate({}, { $inc: incObj }, { upsert: true });
 
         await RedeemedCodeAnalytics.create({
@@ -602,6 +627,21 @@ exports.checkcode = async (req, res) => {
         newKeys.forEach(key => {
             incObj[`counts.${key}`] = (incObj[`counts.${key}`] || 0) + 1;
         });
+
+        for (const key of prevKeys) {
+            await Analytics.findOneAndUpdate(
+                { name: key },
+                { $inc: { amount: -1 } },
+                { upsert: true }
+            );
+        }
+        for (const key of newKeys) {
+            await Analytics.findOneAndUpdate(
+                { name: key },
+                { $inc: { amount: 1 } },
+                { upsert: true }
+            );
+        }
 
         await CodeAnalytics.findOneAndUpdate({}, { $inc: incObj }, { upsert: true });
     }
@@ -736,6 +776,21 @@ exports.redeemcode = async (req, res) => {
             incObj[`counts.${key}`] = (incObj[`counts.${key}`] || 0) + 1;
         });
 
+        for (const key of prevKeys) {
+            await Analytics.findOneAndUpdate(
+                { name: key },
+                { $inc: { amount: -1 } },
+                { upsert: true }
+            );
+        }
+        for (const key of newKeys) {
+            await Analytics.findOneAndUpdate(
+                { name: key },
+                { $inc: { amount: 1 } },
+                { upsert: true }
+            );
+        }
+
         await CodeAnalytics.findOneAndUpdate({}, { $inc: incObj }, { upsert: true });
 
         await RedeemedCodeAnalytics.create({
@@ -803,6 +858,20 @@ exports.redeemcode = async (req, res) => {
             incObj[`counts.${key}`] = (incObj[`counts.${key}`] || 0) + 1;
         });
 
+        for (const key of prevKeys) {
+            await Analytics.findOneAndUpdate(
+                { name: key },
+                { $inc: { amount: -1 } },
+                { upsert: true }
+            );
+        }
+        for (const key of newKeys) {
+            await Analytics.findOneAndUpdate(
+                { name: key },
+                { $inc: { amount: 1 } },
+                { upsert: true }
+            );
+        }
         await CodeAnalytics.findOneAndUpdate({}, { $inc: incObj }, { upsert: true });
         
         await RedeemedCodeAnalytics.create({
@@ -911,6 +980,20 @@ exports.approverejectcode = async (req, res) => {
             incObj[`counts.${key}`] = (incObj[`counts.${key}`] || 0) + 1;
         });
 
+        for (const key of prevKeys) {
+            await Analytics.findOneAndUpdate(
+                { name: key },
+                { $inc: { amount: -1 } },
+                { upsert: true }
+            );
+        }
+        for (const key of newKeys) {
+            await Analytics.findOneAndUpdate(
+                { name: key },
+                { $inc: { amount: 1 } },
+                { upsert: true }
+            );
+        }
         await CodeAnalytics.findOneAndUpdate({}, { $inc: incObj }, { upsert: true });
 
     
@@ -1233,6 +1316,15 @@ async function updateAnalyticsOnArchive(code, direction = -1) {
         incObj[`counts.${key}`] = direction;
     });
 
+    
+    for (const key of keys) {
+        await Analytics.findOneAndUpdate(
+            { name: key },
+            { $inc: { amount: direction } },
+            { upsert: true }
+        );
+    }
+
     await CodeAnalytics.findOneAndUpdate({}, { $inc: incObj }, { upsert: true });
 }
 
@@ -1265,6 +1357,20 @@ async function updateAnalyticsOnEdit(original, updated) {
         incObj[`counts.${key}`] = (incObj[`counts.${key}`] || 0) + 1;
     });
 
+    for (const key of prevKeys) {
+        await Analytics.findOneAndUpdate(
+            { name: key },
+            { $inc: { amount: -1 } },
+            { upsert: true }
+        );
+    }
+    for (const key of newKeys) {
+        await Analytics.findOneAndUpdate(
+            { name: key },
+            { $inc: { amount: 1 } },
+            { upsert: true }
+        );
+    }
     if (Object.keys(incObj).length > 0) {
         await CodeAnalytics.findOneAndUpdate({}, { $inc: incObj }, { upsert: true });
     }
@@ -1316,6 +1422,21 @@ exports.resetcode = async (req, res) => {
         newKeys.forEach(key => {
             incObj[`counts.${key}`] = (incObj[`counts.${key}`] || 0) + 1;
         });
+
+        for (const key of prevKeys) {
+            await Analytics.findOneAndUpdate(
+                { name: key },
+                { $inc: { amount: -1 } },
+                { upsert: true }
+            );
+        }
+        for (const key of newKeys) {
+            await Analytics.findOneAndUpdate(
+                { name: key },
+                { $inc: { amount: 1 } },
+                { upsert: true }
+            );
+        }
 
         await CodeAnalytics.findOneAndUpdate({}, { $inc: incObj }, { upsert: true });
     }
@@ -1426,6 +1547,31 @@ exports.generateitemsoncode = async (req, res, next) => {
                     decObj[`counts.M:${manufacturer}`] = -1;
                     await CodeAnalytics.findOneAndUpdate({}, { $inc: decObj }, { upsert: true });
                 }
+
+                if (code.type === "chest") {
+                    // Build analytics keys
+                    const keyManuType = buildAnalyticsKey({ manufacturer: manufacturer, type: "chest" });
+                    const keyTypeOnly = buildAnalyticsKey({ type: "chest" });
+                    const keyManufacturer = `M:${manufacturer}`;
+
+                    // Decrement each key in Analytics
+                    await Analytics.findOneAndUpdate(
+                        { name: keyManuType },
+                        { $inc: { amount: -1 } },
+                        { upsert: true }
+                    );
+                    await Analytics.findOneAndUpdate(
+                        { name: keyTypeOnly },
+                        { $inc: { amount: -1 } },
+                        { upsert: true }
+                    );
+                    await Analytics.findOneAndUpdate(
+                        { name: keyManufacturer },
+                        { $inc: { amount: -1 } },
+                        { upsert: true }
+                    );
+                }
+
             }
             io.to(socketid).emit('generate-items-progress', {
                 percentage: Math.round((processed / codesamount) * 100),
@@ -1473,6 +1619,13 @@ exports.generateitemsoncode = async (req, res, next) => {
                 incObj[`counts.${key}`] = totalUpdated;
             });
 
+            for (const key of keysToUpdate) {
+                await Analytics.findOneAndUpdate(
+                    { name: key },
+                    { $inc: { amount: totalUpdated } },
+                    { upsert: true }
+                );
+            }
             console.log(`Final analytics update with ${totalUpdated} items...`);
             await CodeAnalytics.findOneAndUpdate({}, { $inc: incObj }, { upsert: true });
         }
@@ -1498,13 +1651,24 @@ exports.generateitemsoncode = async (req, res, next) => {
 })();
 
 };
+// Helper to build manufacturer _id filter
+function getManufacturerFilter(manufacturer) {
+  const manufact = getmanufacturerbyname(manufacturer);
+  if (manufact !== null) {
+    const gtIndex = manufact.gt || null;
+    const lteIndex = manufact.lte || 0;
+    return { _id: { $lte: lteIndex, ...(gtIndex && { $gt: gtIndex }) } };
+  }
+  return {};
+}
 
-
+// 🔹 Fetch total code count for the manufacturer
 async function getTotalCodesForManufacturer(filter) {
   const total = await Code.countDocuments(filter);
   return total;
 }
 
+// 🔹 Fetch analytics for each item in parallel
 async function getItemsAnalytics(filter) {
   const items = await Item.find({});
   const analytics = await Promise.all(
@@ -1561,18 +1725,19 @@ async function getItemsAnalytics(filter) {
   return analytics;
 }
 
-
+// 🔹 Main handler function
 exports.getCodeAnalyticsCountOverall = async (req, res) => {
   const { manufacturer } = req.query;
 
   try {
     console.time('analytics-parallel');
 
+    const filter = manufacturer ? getManufacturerFilter(manufacturer) : {};
+
     // Run both analytics in parallel
     const [totalcodes, itemsanalytics] = await Promise.all([
-      getTotalCodesForManufacturer(),
-      getItemsAnalytics(),
-      
+      getTotalCodesForManufacturer(filter),
+      getItemsAnalytics(filter),
     ]);
 
     console.timeEnd('analytics-parallel');
