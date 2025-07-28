@@ -1,4 +1,4 @@
-const { newgeneratecode, getcodes, checkcode, redeemcode, approverejectcode, deletecode,getCodeAnalyticsCountOverall, exportCodesCSV, editmultiplecodes, resetcode, generateitemsoncode, getcodescount } = require('../controllers/code');
+const { newgeneratecode, getcodes, checkcode, redeemcode, approverejectcode, deletecode,getCodeAnalyticsCountOverall, exportCodesCSV, editmultiplecodes, resetcode, generateitemsoncode, getcodescount, cancelAnalytics } = require('../controllers/code');
 const { protectsuperadmin, protectplayer } = require('../middleware/middleware');
 
 const upload = require("../middleware/uploadpics")
@@ -25,6 +25,7 @@ router
  .get('/export-csv', exportCodesCSV)
  .post("/editmultiplecodes", protectsuperadmin, editmultiplecodes)
  .post("/checkcode", protectplayer, checkcode)
- .post("/resetcode", protectsuperadmin, resetcode);
+ .post("/resetcode", protectsuperadmin, resetcode)
+ .post("/cancelanalytics", protectsuperadmin, cancelAnalytics)
 
 module.exports = router;

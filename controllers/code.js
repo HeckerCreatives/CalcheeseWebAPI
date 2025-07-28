@@ -19,6 +19,7 @@ const { syncAllAnalytics } = require("./dashboard");
 const { syncAllAnalyticsUtility } = require("../utils/analytics");
 const CodeAnalytics = require("../models/CodeAnalytics");
 const { getmanufacturerbyname } = require("../utils/manufacturerutil");
+const analyticsCancelMap = new Map();
 
 const CHARSET = 'ACDEFHJKLMNPRTUVXWY379';
 const CODE_LENGTH = 9;
@@ -1667,13 +1668,25 @@ function getManufacturerFilter(manufacturer) {
 }
 
 // 🔹 Fetch total code count for the manufacturer
-async function getTotalCodesForManufacturer(filter) {
+async function getTotalCodesForManufacturer(filter, socketid) {
   const total = await Code.countDocuments(filter);
+  if (analyticsCancelMap.get(socketid)) {
+    if (!getTotalCodesForManufacturer._cancelled) {
+      io.to(socketid).emit('code-analytics-progress', {
+        percentage: 100,
+        status: 'cancelled',
+        message: 'Analytics generation cancelled by user.'
+      });
+      getTotalCodesForManufacturer._cancelled = true;
+    }
+    analyticsCancelMap.delete(socketid);
+    return undefined;
+  }
   return total;
 }
 
 // 🔹 Fetch analytics for each item in parallel
-async function getItemsAnalytics(filter) {
+async function getItemsAnalytics(filter, socketid) {
   const items = await Item.find({});
   const analytics = await Promise.all(
     items.map(async (item) => {
@@ -1682,6 +1695,19 @@ async function getItemsAnalytics(filter) {
         ...filter,
         items: { $in: [itemId] },
       };
+
+      if (analyticsCancelMap.get(socketid)) {
+        if (!getItemsAnalytics._cancelled) {
+          io.to(socketid).emit('code-analytics-progress', {
+            percentage: 100,
+            status: 'cancelled',
+            message: 'Analytics generation cancelled by user.'
+          });
+          getItemsAnalytics._cancelled = true;
+        }
+        analyticsCancelMap.delete(socketid);
+        return undefined;
+      }
 
       const result = await Code.aggregate([
         { $match: itemFilter },
@@ -1726,43 +1752,55 @@ async function getItemsAnalytics(filter) {
     })
   );
 
-  return analytics;
+  return analytics.filter(Boolean); // Remove undefined if cancelled
 }
 
 // 🔹 Main handler function
 exports.getCodeAnalyticsCountOverall = async (req, res) => {
   const { manufacturer, socketid } = req.query;
-
   const filter = manufacturer ? getManufacturerFilter(manufacturer) : {};
-  
-     res.json({
-        message: "success",
-        status: "analytics-started",
-    });
+  res.json({
+    message: "success",
+    status: "analytics-started",
+  });
   (async () => {
-      try {
-     const [totalcodes, itemsanalytics] = await Promise.all([
-       getTotalCodesForManufacturer(filter),
-       getItemsAnalytics(filter),
-     ]);
- 
-
-    io.to(socketid).emit('code-analytics-progress', {
-       percentage: 100,
-       status: 'complete',
-       manufacturer: manufacturer || '',
-       totalcodes,
-       itemsanalytics,
-       message: 'Analytics data generated successfully.',
-     });
-
-   } catch (err) {
-     console.error('Error in getCodeAnalyticsCountOverall:', err);
-        io.to(socketid).emit('code-analytics-progress', {
+    try {
+      const [totalcodes, itemsanalytics] = await Promise.all([
+        getTotalCodesForManufacturer(filter, socketid),
+        getItemsAnalytics(filter, socketid),
+      ]);
+      if (analyticsCancelMap.get(socketid)) {
+        // Already handled in subfunctions, just ensure cleanup
+        analyticsCancelMap.delete(socketid);
+        return;
+      }
+      io.to(socketid).emit('code-analytics-progress', {
+        percentage: 100,
+        status: 'complete',
+        manufacturer: manufacturer || '',
+        totalcodes,
+        itemsanalytics,
+        message: 'Analytics data generated successfully.',
+      });
+      analyticsCancelMap.delete(socketid);
+    } catch (err) {
+      console.error('Error in getCodeAnalyticsCountOverall:', err);
+      io.to(socketid).emit('code-analytics-progress', {
         percentage: 100,
         status: 'failed',
         message: 'There was an error generating the analytics data. Please try again later.',
-        });
-   }
- })()
+      });
+      analyticsCancelMap.delete(socketid);
+    }
+  })();
+};
+
+
+exports.cancelAnalytics = (req, res) => {
+    const { socketid } = req.body;
+    if (!socketid) {
+        return res.status(400).json({ message: "bad-request", data: "Missing socketid" });
+    }
+    analyticsCancelMap.set(socketid, true);
+    return res.json({ message: "cancelled" });
 };
