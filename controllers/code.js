@@ -391,6 +391,10 @@ exports.getcodes = async (req, res) => {
         lastcodeid
     });
 }
+  
+
+
+
 
 exports.getcodescount = async (req, res) => {
     const { socketid, page, limit, type, rarity, item, status, search, archive, lastid, manufacturer } = req.query;
@@ -1737,12 +1741,6 @@ exports.getCodeAnalyticsCountOverall = async (req, res) => {
     });
   (async () => {
       try {
-        io.to(socketid).emit('code-analytics-progress', {
-            percentage: 0,
-            status: 'starting',
-            manufacturer: manufacturer || '',
-            message: 'Generating analytics data...'
-        });
      const [totalcodes, itemsanalytics] = await Promise.all([
        getTotalCodesForManufacturer(filter),
        getItemsAnalytics(filter),
