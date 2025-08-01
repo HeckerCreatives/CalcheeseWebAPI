@@ -709,3 +709,59 @@ exports.setAllManualCodeAnalytics = async () => {
 
     console.log("All manual CodeAnalytics keys set!");
 };
+
+
+exports.syncAllAnalyticsUtility = async () => {
+    console.log("Starting full analytics sync...");
+    const batchSize = 100000;
+    let lastId = null;
+    let hasMore = true;
+    let batchnumber = 0;
+    const counts = {};
+
+    let processedCount = 0;
+    const totalDocs = await Code.estimatedDocumentCount();
+
+    console.log(`Starting sync with total documents: ${totalDocs}`);
+    while (hasMore) {
+        const codes = await Code.find(
+            lastId ? { _id: { $gt: lastId } } : {},
+            'index _id archived isUsed type rarity expiration status items manufacturer'
+        )
+            .sort({ _id: 1 })
+            .limit(batchSize)
+            .lean();
+
+        if (codes.length === 0) break;
+
+        codes.forEach(code => {
+            const keys = buildKeys(code);
+            keys.forEach(key => incrementFlat(counts, key));
+        });
+
+        processedCount += codes.length;
+        lastId = codes[codes.length - 1]._id;
+        hasMore = codes.length === batchSize && processedCount < totalDocs;
+        batchnumber++;
+        console.log(`Batch ${batchnumber} processed, last ID: ${lastId.toString()}, processed: ${processedCount}`);
+        if (batchnumber % 100 === 0) {
+            console.log(counts);
+        }
+    }
+
+    // Sync to Analytics collection (flat documents)
+    const bulkOps = Object.entries(counts).map(([key, value]) => ({
+        updateOne: {
+            filter: { name: key },
+            update: { $set: { amount: value } },
+            upsert: true
+        }
+    }));
+
+    if (bulkOps.length > 0) {
+        await Analytics.bulkWrite(bulkOps);
+    }
+
+    console.log("Analytics sync complete.");
+    return counts;
+}

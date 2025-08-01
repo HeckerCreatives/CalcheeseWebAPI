@@ -1497,7 +1497,6 @@ exports.generateitemsoncode = async (req, res, next) => {
     // Return success immediately to avoid timeout
     res.json({ message: "success", status: "generation-started" });
 
-// Start background processing
 (async () => {
     const batchSize = 1000;
     let processed = 0;
@@ -1527,69 +1526,42 @@ exports.generateitemsoncode = async (req, res, next) => {
 
             io.to(socketid).emit('generate-items-progress', {
                 percentage: Math.round((processed / codesamount) * 100),
-                status: `Processing batch ${batchNum} (${processed}/${codesamount}).`
+                status: `Processing batch ${batchNum} (${processed}/${codesamount})`
             });
 
-            const codesBatch = await Code.find({ 
-                manufacturer: manufacturer,
-                items: { $size: 0 } 
+            const codesBatch = await Code.find({
+                manufacturer,
+                items: { $size: 0 }
             })
-            .select('_id index type rarity status')
-            .limit(currentBatchSize);
+                .select('_id index type rarity status')
+                .lean()
+                .limit(currentBatchSize);
 
             if (codesBatch.length === 0) {
                 console.log(`No more codes available for batch ${batchNum}.`);
                 break;
             }
 
-            for (const code of codesBatch) {
-                if (code.type === "chest") {
-                    const decObj = {};
-                    const keyManuType = buildAnalyticsKey({ manufacturer: manufacturer, type: "chest" });
-                    const keyTypeOnly = buildAnalyticsKey({ type: "chest" });
-                    decObj[`counts.${keyManuType}`] = -1;
-                    decObj[`counts.${keyTypeOnly}`] = -1;
-                    decObj[`counts.M:${manufacturer}`] = -1;
-                    await CodeAnalytics.findOneAndUpdate({}, { $inc: decObj }, { upsert: true });
-                }
+            // Accumulate Analytics decrement keys for chest-type codes
+            let decAnalyticsCounts = {};
 
-                if (code.type === "chest") {
-                    // Build analytics keys
-                    const keyManuType = buildAnalyticsKey({ manufacturer: manufacturer, type: "chest" });
-                    const keyTypeOnly = buildAnalyticsKey({ type: "chest" });
-                    const keyManufacturer = `M:${manufacturer}`;
+            const keyManuType = buildAnalyticsKey({ manufacturer, type: "chest" });
+            const keyTypeOnly = buildAnalyticsKey({ type: "chest" });
+            const keyManufacturer = `M:${manufacturer}`;
 
-                    // Decrement each key in Analytics
-                    await Analytics.findOneAndUpdate(
-                        { name: keyManuType },
-                        { $inc: { amount: -1 } },
-                        { upsert: true }
-                    );
-                    await Analytics.findOneAndUpdate(
-                        { name: keyTypeOnly },
-                        { $inc: { amount: -1 } },
-                        { upsert: true }
-                    );
-                    await Analytics.findOneAndUpdate(
-                        { name: keyManufacturer },
-                        { $inc: { amount: -1 } },
-                        { upsert: true }
-                    );
-                }
-
-            }
-            io.to(socketid).emit('generate-items-progress', {
-                percentage: Math.round((processed / codesamount) * 100),
-                status: `Processing batch ${batchNum} (${processed}/${codesamount})..`
+            [keyManuType, keyTypeOnly, keyManufacturer].forEach(key => {
+                decAnalyticsCounts[key] = (decAnalyticsCounts[key] || 0) - codesBatch.length;
             });
+
+            // Bulk update the codes
             await Code.updateMany(
                 { _id: { $in: codesBatch.map(code => code._id) } },
                 {
                     $set: {
                         items: itemIds,
                         status: "to-claim",
-                        type: type,
-                        rarity: rarity
+                        type,
+                        rarity
                     }
                 }
             );
@@ -1599,11 +1571,23 @@ exports.generateitemsoncode = async (req, res, next) => {
 
             io.to(socketid).emit('generate-items-progress', {
                 percentage: Math.round((processed / codesamount) * 100),
-                status: `Processing batch ${batchNum} (${processed}/${codesamount})...`,
+                status: `Processed batch ${batchNum} (${processed}/${codesamount})`,
                 processed,
                 total: codesamount,
                 success: true
             });
+
+            // Bulk update Analytics for decrements
+            const analyticsBulkOps = Object.entries(decAnalyticsCounts).map(([key, val]) => ({
+                updateOne: {
+                    filter: { name: key },
+                    update: { $inc: { amount: val } },
+                    upsert: true
+                }
+            }));
+            if (analyticsBulkOps.length > 0) {
+                await Analytics.bulkWrite(analyticsBulkOps);
+            }
 
             console.log(`Processed batch ${batchNum}: ${codesBatch.length} codes, total processed: ${processed}`);
             batchNum++;
@@ -1611,36 +1595,37 @@ exports.generateitemsoncode = async (req, res, next) => {
 
         if (totalUpdated > 0) {
             const keysToUpdate = buildMultipleAnalyticsKey({
-                manufacturer: manufacturer,
+                manufacturer,
                 type,
                 rarity,
                 status: "to-claim",
                 items: itemIds
             });
-            keysToUpdate.push("T");
 
-            const incObj = {};
-            keysToUpdate.forEach(key => {
-                incObj[`counts.${key}`] = totalUpdated;
-            });
+            const filteredKeys = keysToUpdate.filter(key => !key.startsWith('T:') && !key.startsWith('M:') && !key.startsWith('ST:'));
+    
+            const finalAnalyticsBulkOps = filteredKeys.map(key => ({
+                updateOne: {
+                    filter: { name: key },
+                    update: { $inc: { amount: totalUpdated } },
+                    upsert: true
+                }
+            }));
 
-            for (const key of keysToUpdate) {
-                await Analytics.findOneAndUpdate(
-                    { name: key },
-                    { $inc: { amount: totalUpdated } },
-                    { upsert: true }
-                );
+            if (finalAnalyticsBulkOps.length > 0) {
+                await Analytics.bulkWrite(finalAnalyticsBulkOps);
             }
+
             console.log(`Final analytics update with ${totalUpdated} items...`);
-            await CodeAnalytics.findOneAndUpdate({}, { $inc: incObj }, { upsert: true });
         }
+
         io.to(socketid).emit('generate-items-progress', {
             percentage: 100,
             status: 'Complete',
             processed,
             type,
             rarity,
-            manufacturer: manufacturer,
+            manufacturer,
             success: true
         });
 
