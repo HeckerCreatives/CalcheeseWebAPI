@@ -68,6 +68,33 @@ function buildMultipleAnalyticsKey({ manufacturer, type, rarity, status, items }
     return keys;
 }
 
+
+function assignBuildMultipleAnalyticsKey({ manufacturer, type, rarity, status, items }) {
+    const keys = [];
+    const M = manufacturer;
+    const TY = type;
+    const R = rarity;
+    const S = status;
+    const I = Array.isArray(items) ? items.map(i => i.toString()) : [];
+
+    // LEVEL 2
+    if (M && TY) keys.push(`M:${M}|TY:${TY}`);
+    if (S && TY) keys.push(`S:${S}|TY:${TY}`);
+    if (TY && R) keys.push(`TY:${TY}|R:${R}`);
+    if (TY && I.length) I.forEach(item => keys.push(`TY:${TY}|I:${item}`));
+    // LEVEL 3
+    if (M && TY && R) keys.push(`M:${M}|TY:${TY}|R:${R}`);
+    if (TY && R && S) keys.push(`TY:${TY}|R:${R}|S:${S}`);
+    if (TY && R && I.length) I.forEach(item => keys.push(`TY:${TY}|R:${R}|I:${item}`));
+    // LEVEL 4
+    if (M && TY && R && S) keys.push(`M:${M}|TY:${TY}|R:${R}|S:${S}`);
+    if (M && TY && R && I.length) I.forEach(item => keys.push(`M:${M}|TY:${TY}|R:${R}|I:${item}`));
+    // LEVEL 5
+    if (M && TY && R && S && I.length) I.forEach(item => keys.push(`M:${M}|TY:${TY}|R:${R}|S:${S}|I:${item}`));
+
+    return keys;
+}
+
 async function saveWithFallback(data, maxRetries = 3) {
     let attempts = 0;
     let currentData = [...data]; // Make a copy of the original data
@@ -1594,7 +1621,7 @@ exports.generateitemsoncode = async (req, res, next) => {
         }
 
         if (totalUpdated > 0) {
-            const keysToUpdate = buildMultipleAnalyticsKey({
+            const keysToUpdate = assignBuildMultipleAnalyticsKey({
                 manufacturer,
                 type,
                 rarity,
@@ -1602,15 +1629,15 @@ exports.generateitemsoncode = async (req, res, next) => {
                 items: itemIds
             });
 
-            const filteredKeys = keysToUpdate.filter(key => !key.startsWith('T:') && !key.startsWith('M:') && !key.startsWith('ST:'));
-    
-            const finalAnalyticsBulkOps = filteredKeys.map(key => ({
+            
+            // add the filter inside here
+            const finalAnalyticsBulkOps = keysToUpdate.map(key => ({
                 updateOne: {
                     filter: { name: key },
                     update: { $inc: { amount: totalUpdated } },
                     upsert: true
                 }
-            }));
+            }))
 
             if (finalAnalyticsBulkOps.length > 0) {
                 await Analytics.bulkWrite(finalAnalyticsBulkOps);
