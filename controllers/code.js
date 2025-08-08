@@ -289,10 +289,12 @@ exports.getcodes = async (req, res) => {
         }
 
     if (search) {
-        const searchRegex = new RegExp(search, 'i'); // Case-insensitive search
-        filter.$or = [
-            { code: searchRegex },
-        ];
+        // const searchRegex = new RegExp(search, 'i'); // Case-insensitive search
+        // filter.$or = [
+        //     { code: searchRegex },
+        // ];
+
+        filter.code = search
     }
     if (manufacturer) {
         filter.manufacturer = manufacturer;
