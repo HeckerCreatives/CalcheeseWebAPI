@@ -286,7 +286,7 @@ exports.getcodes = async (req, res) => {
             filter.archived = true;
         } else {
             filter.archived = {
-                $in: [false, undefined, null]
+                $ne: true
             };
         }
 
