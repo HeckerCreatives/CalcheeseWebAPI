@@ -404,48 +404,27 @@ exports.gettypeclaimbarchart = async (req, res) => {
 exports.getpiechartanalytics = async (req, res) => {
     // its just the total of the different types of codes
 
-    const analytics = await Analytics.findOne()
-        .then(data => data)
-        .catch(err => {
-            console.log(`There's a problem getting the analytics data. Error ${err}`);
-            return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
-        });
 
-    if (!analytics) {
-        return res.status(404).json({ message: "not-found", data: "Analytics not found." });
-    }
-
-    const totalingame = analytics.totalclaimedingame + analytics.totalunclaimedingame;
-    const totalrobux = analytics.totalclaimedrobux + analytics.totalunclaimedrobux;
-    const totalticket = analytics.totalclaimedticket + analytics.totalunclaimedticket;
-    const totalexclusive = analytics.totalclaimedexclusive + analytics.totalunclaimedexclusive;
-    const totalchest = analytics.totalclaimedchest + analytics.totalunclaimedchest;
-
+    const totalingame = await Analytics.findOne({ name: "TY:ingame"});
+    const totalrobux = await Analytics.findOne({ name: "TY:robux"});
+    const totalticket = await Analytics.findOne({ name: "TY:ticket"});
+    const totalexclusive = await Analytics.findOne({ name: "TY:exclusive"});
+    const totalchest = await Analytics.findOne({ name: "TY:chest"});
     const result = {
         ingame: {
-            claimed: analytics.totalclaimedingame,
-            unclaimed: analytics.totalunclaimedingame,
-            total: totalingame
+            total: totalingame.amount
         },
         robux: {
-            claimed: analytics.totalclaimedrobux,
-            unclaimed: analytics.totalunclaimedrobux,
-            total: totalrobux
+            total: totalrobux.amount
         },
         ticket: {
-            claimed: analytics.totalclaimedticket,
-            unclaimed: analytics.totalunclaimedticket,
-            total: totalticket
+            total: totalticket.amount
         },
         exclusive: {
-            claimed: analytics.totalclaimedexclusive,
-            unclaimed: analytics.totalunclaimedexclusive,
-            total: totalexclusive
+            total: totalexclusive.amount
         },
         chest: {
-            claimed: analytics.totalclaimedchest,
-            unclaimed: analytics.totalunclaimedchest,
-            total: totalchest
+            total: totalchest.amount
         }
     };
 

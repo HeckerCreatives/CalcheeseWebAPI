@@ -324,17 +324,6 @@ exports.getcodes = async (req, res) => {
             },
         },
         {
-            $lookup: {
-                from: "tickets",
-                localField: "ticket",
-                foreignField: "_id",
-                as: "ticket",
-            },
-        },
-        {
-            $unwind: { path: "$ticket", preserveNullAndEmptyArrays: true },
-        },
-        {
             $limit: pageOptions.limit,
         }
     ])
@@ -368,13 +357,6 @@ exports.getcodes = async (req, res) => {
             archived: code.archived || false,
         };
 
-        if (code.ticket && code.ticket._id) {
-            result.ticket = {
-                id: code.ticket._id,
-                ticketid: code.ticket.ticketid,
-            };
-        }
-
         if (code.isUsed && code.type === "ticket") {
             result.form = {
                 guardian: code.guardian,
@@ -383,13 +365,6 @@ exports.getcodes = async (req, res) => {
                 contact: code.contact,
                 address: code.address,
                 picture: code.picture,
-            }
-        }
-
-        if (code.isUsed && code.type === "robux") {
-            result.form = {
-                name: code.name,
-                email: code.email,
             }
         }
 
