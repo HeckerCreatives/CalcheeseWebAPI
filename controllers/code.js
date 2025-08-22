@@ -285,7 +285,9 @@ exports.getcodes = async (req, res) => {
         if (archive === 'true' || archive === true) {
             filter.archived = true;
         } else {
-            filter.archived = { $in: [false] };
+            filter.archived = {
+                $in: [false, undefined, null]
+            };
         }
 
     if (search) {
@@ -300,12 +302,13 @@ exports.getcodes = async (req, res) => {
         filter.manufacturer = manufacturer;
     }
     
-    let lastidindex = page * pageOptions.limit;
+    let lastidindex = pageOptions.page * pageOptions.limit;
     
     if (lastidindex) {
         filter.index = { $gt: lastidindex };
     }
     let totalDocs = 0;
+
     const codes = await Code.aggregate([
         {
             $match: filter,
@@ -345,7 +348,7 @@ exports.getcodes = async (req, res) => {
     // test if codes with status claimed is empty
 
     const finalData = codes.map(code => {
-        const result = {
+         const result = {
             id: code._id,
             code: code.code,
             status: code.status,
