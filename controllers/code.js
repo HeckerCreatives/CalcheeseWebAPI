@@ -285,7 +285,7 @@ exports.getcodes = async (req, res) => {
         if (archive === 'true' || archive === true) {
             filter.archived = true;
         } else {
-            filter.archived = { $in: [false, undefined] };
+            filter.archived = { $in: [false] };
         }
 
     if (search) {
