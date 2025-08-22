@@ -282,13 +282,14 @@ exports.getcodes = async (req, res) => {
     if (rarity && ["common", "uncommon", "rare", "epic", "legendary"].includes(rarity)) {
         filter.rarity = rarity;
     }
-        if (archive === 'true' || archive === true) {
-            filter.archived = true;
-        } else {
-            filter.archived = {
-                $ne: true
-            };
-        }
+    if (archive === 'true' || archive === true) {
+        // explicitly request archived items only
+        filter.archived = true;
+    } else if (archive === 'false' || archive === false) {
+        // explicitly request non-archived items (including missing field)
+        // should be not equal to true
+        filter.archived = { $ne: true };
+    }
 
     if (search) {
         // const searchRegex = new RegExp(search, 'i'); // Case-insensitive search
@@ -313,6 +314,7 @@ exports.getcodes = async (req, res) => {
         {
             $match: filter,
         },
+        { $sort: { _id: 1 } }, 
         {
             $lookup: {
                 from: "items",
@@ -334,9 +336,6 @@ exports.getcodes = async (req, res) => {
         },
         {
             $limit: pageOptions.limit,
-        },
-        {
-            $sort: { _id: 1 }
         }
     ])
         .then(data => data)
@@ -345,6 +344,7 @@ exports.getcodes = async (req, res) => {
             return res.status(400).json({ message: "bad-request", data: "There's a problem with the server! Please contact customer support for more details." });
         });
     
+    console.log(filter)
     // test if codes with status claimed is empty
 
     const finalData = codes.map(code => {
